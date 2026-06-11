@@ -21,6 +21,8 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('launcher:save-settings', settings),
   saveProfile: (profile: Record<string, unknown>) =>
     ipcRenderer.invoke('profile:save', profile),
+  getForgeBuilds: (minecraftVersion: string) =>
+    ipcRenderer.invoke('forge:list-builds', minecraftVersion),
   selectProfile: (profileId: string) =>
     ipcRenderer.invoke('profile:select', profileId),
   deleteProfile: (profileId: string) =>

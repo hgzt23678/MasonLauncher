@@ -29,6 +29,12 @@ type LauncherSettings = {
 type LaunchProfile = {
   id: string;
   name: string;
+  profileType: 'vanilla' | 'forge';
+  loaderType: 'vanilla' | 'forge';
+  minecraftVersion: string;
+  loaderVersion: string | null;
+  resolvedVersionId: string;
+  // Compatibility aliases for settings written by versions before 1.5.
   versionId: string;
   loader: 'vanilla' | 'forge';
   minMemory: number;
@@ -77,6 +83,11 @@ const defaultSettings = (): LauncherSettings => ({
   profiles: [
     {
       id: 'default-profile',
+      profileType: 'vanilla',
+      loaderType: 'vanilla',
+      minecraftVersion: '',
+      loaderVersion: null,
+      resolvedVersionId: '',
       name: 'メインプロファイル',
       versionId: '',
       loader: 'vanilla',
@@ -111,7 +122,8 @@ const readSettings = async (): Promise<LauncherSettings> => {
                   typeof profile.id === 'string' &&
                   /^[a-zA-Z0-9-]+$/.test(profile.id) &&
                   typeof profile.name === 'string' &&
-                  typeof profile.versionId === 'string',
+                  (typeof profile.versionId === 'string' ||
+                    typeof profile.minecraftVersion === 'string'),
               ),
           )
           .map((profile): LaunchProfile => {
@@ -119,11 +131,34 @@ const readSettings = async (): Promise<LauncherSettings> => {
               typeof profile.minMemory === 'number'
                 ? Math.max(512, Math.round(profile.minMemory))
                 : minMemory;
+            const loaderType =
+              profile.loaderType === 'forge' || profile.loader === 'forge'
+                ? 'forge'
+                : 'vanilla';
+            const minecraftVersion =
+              typeof profile.minecraftVersion === 'string'
+                ? profile.minecraftVersion
+                : profile.versionId;
+            const loaderVersion =
+              loaderType === 'forge' &&
+              typeof profile.loaderVersion === 'string' &&
+              profile.loaderVersion.trim()
+                ? profile.loaderVersion.trim()
+                : null;
+            const resolvedVersionId =
+              loaderType === 'forge' && loaderVersion
+                ? `${minecraftVersion}-forge-${loaderVersion}`
+                : minecraftVersion;
             return {
               id: profile.id,
               name: profile.name.trim() || 'プロファイル',
-              versionId: profile.versionId,
-              loader: profile.loader === 'forge' ? 'forge' : 'vanilla',
+              profileType: loaderType,
+              loaderType,
+              minecraftVersion,
+              loaderVersion,
+              resolvedVersionId,
+              versionId: minecraftVersion,
+              loader: loaderType,
               minMemory: profileMin,
               maxMemory:
                 typeof profile.maxMemory === 'number'
@@ -367,6 +402,32 @@ const requireMinecraftSession = async (sender: Electron.WebContents) => {
     return await authService.getMinecraftSession();
   } catch (error) {
     const failure = classifyAuthFailure(error);
+    if (failure.category === 'network') {
+      try {
+        const offlineSession = await authService.getCachedOfflineSession();
+        if (!sender.isDestroyed()) {
+          sender.send('minecraft:progress', {
+            phase: 'authentication',
+            percent: 100,
+            category: 'offline-auth',
+            message:
+              'Authenticated offline mode: single-player only. Online servers and Realms may be unavailable.',
+          });
+        }
+        log('warn', 'auth:ownership', 'Using authenticated offline session.', {
+          profileId: offlineSession.profile.id,
+          sessionMode: offlineSession.mode,
+        });
+        return offlineSession;
+      } catch (offlineError) {
+        diagnostics.error(
+          'auth:ownership',
+          'Authenticated offline launch was denied.',
+          offlineError,
+        );
+        throw offlineError;
+      }
+    }
     const category =
       failure.category === 'ownership' ? 'ownership' : 'authentication';
     if (!sender.isDestroyed()) {
@@ -522,12 +583,24 @@ const getLauncherState = async () => {
     ) {
       profile.versionId = installedProfileVersion.inheritsFrom;
       profile.loader = 'forge';
+      profile.loaderVersion =
+        installedProfileVersion.id.match(/-forge-(.+)$/i)?.[1] ?? null;
       settingsChanged = true;
     }
     if (!profile.versionId && fallbackVersion) {
       profile.versionId = fallbackVersion;
       settingsChanged = true;
     }
+    const loaderType = profile.loader === 'forge' ? 'forge' : 'vanilla';
+    profile.profileType = loaderType;
+    profile.loaderType = loaderType;
+    profile.minecraftVersion = profile.versionId;
+    profile.loaderVersion =
+      loaderType === 'forge' ? profile.loaderVersion : null;
+    profile.resolvedVersionId =
+      loaderType === 'forge' && profile.loaderVersion
+        ? `${profile.versionId}-forge-${profile.loaderVersion}`
+        : profile.versionId;
   }
   if (settingsChanged) {
     await writeSettings(settings);
@@ -608,13 +681,17 @@ const registerIpcHandlers = () => {
     const settings = await readSettings();
     const update = input as Partial<LaunchProfile>;
     const name = typeof update.name === 'string' ? update.name.trim() : '';
-    const versionId =
-      typeof update.versionId === 'string' ? update.versionId.trim() : '';
+    const minecraftVersion =
+      typeof update.minecraftVersion === 'string'
+        ? update.minecraftVersion.trim()
+        : typeof update.versionId === 'string'
+          ? update.versionId.trim()
+          : '';
 
     if (!name || name.length > 40) {
       throw new Error('プロファイル名は1〜40文字で入力してください。');
     }
-    if (!versionId || versionId.length > 100) {
+    if (!minecraftVersion || minecraftVersion.length > 100) {
       throw new Error('Minecraftバージョンを選択してください。');
     }
 
@@ -626,7 +703,21 @@ const registerIpcHandlers = () => {
       typeof update.maxMemory === 'number'
         ? Math.max(minMemory, Math.round(update.maxMemory))
         : settings.maxMemory;
-    const loader = update.loader === 'forge' ? 'forge' : 'vanilla';
+    const loader =
+      update.loaderType === 'forge' || update.loader === 'forge'
+        ? 'forge'
+        : 'vanilla';
+    const loaderVersion =
+      loader === 'forge' && typeof update.loaderVersion === 'string'
+        ? update.loaderVersion.trim()
+        : null;
+    if (loader === 'forge' && !loaderVersion) {
+      throw new Error('Forge build must be selected.');
+    }
+    const resolvedVersionId =
+      loader === 'forge'
+        ? `${minecraftVersion}-forge-${loaderVersion}`
+        : minecraftVersion;
     const existing = settings.profiles.find(
       (profile) => profile.id === update.id,
     );
@@ -634,7 +725,12 @@ const registerIpcHandlers = () => {
     if (existing) {
       Object.assign(existing, {
         name,
-        versionId,
+        profileType: loader,
+        loaderType: loader,
+        minecraftVersion,
+        loaderVersion,
+        resolvedVersionId,
+        versionId: minecraftVersion,
         loader,
         minMemory,
         maxMemory,
@@ -645,7 +741,12 @@ const registerIpcHandlers = () => {
       const profile: LaunchProfile = {
         id: randomUUID(),
         name,
-        versionId,
+        profileType: loader,
+        loaderType: loader,
+        minecraftVersion,
+        loaderVersion,
+        resolvedVersionId,
+        versionId: minecraftVersion,
         loader,
         minMemory,
         maxMemory,
@@ -658,6 +759,19 @@ const registerIpcHandlers = () => {
     await writeSettings(settings);
     return getLauncherState();
   });
+
+  ipcMain.handle(
+    'forge:list-builds',
+    async (_event, minecraftVersion: unknown) => {
+      if (
+        typeof minecraftVersion !== 'string' ||
+        !minecraftVersion.trim()
+      ) {
+        throw new Error('Minecraft version is required.');
+      }
+      return minecraftService.getForgeBuilds(minecraftVersion.trim());
+    },
+  );
 
   ipcMain.handle(
     'modrinth:search',
@@ -820,7 +934,9 @@ const registerIpcHandlers = () => {
         maxMemory: settings.maxMemory,
       });
       const session = await requireMinecraftSession(event.sender);
-      await ensureVersionInstalled(id, event.sender);
+      if (session.mode === 'online') {
+        await ensureVersionInstalled(id, event.sender);
+      }
       return minecraftService.launchVersion(
         id,
         session,
@@ -864,29 +980,53 @@ const registerIpcHandlers = () => {
       ) {
         profile.versionId = selectedInstalledVersion.inheritsFrom;
         profile.loader = 'forge';
+        profile.profileType = 'forge';
+        profile.loaderType = 'forge';
+        profile.minecraftVersion = selectedInstalledVersion.inheritsFrom;
+        profile.loaderVersion =
+          selectedInstalledVersion.id.match(/-forge-(.+)$/i)?.[1] ?? null;
+        profile.resolvedVersionId = selectedInstalledVersion.id;
         await writeSettings(settings);
       }
       const session = await requireMinecraftSession(event.sender);
-      await ensureVersionInstalled(profile.versionId, event.sender);
+      const offlineOnly = session.mode === 'authenticated-offline';
+      if (!offlineOnly) {
+        await ensureVersionInstalled(
+          profile.minecraftVersion,
+          event.sender,
+        );
+      }
+      if (profile.loader === 'forge' && !profile.loaderVersion) {
+        throw new Error('Forge build is not selected for this profile.');
+      }
       const versionId =
         profile.loader === 'forge'
-          ? await minecraftService.ensureForge(profile.versionId, event.sender)
-          : profile.versionId;
+          ? await minecraftService.ensureForge(
+              profile.minecraftVersion,
+              profile.loaderVersion as string,
+              event.sender,
+              offlineOnly,
+            )
+          : profile.minecraftVersion;
+      if (profile.resolvedVersionId !== versionId) {
+        profile.resolvedVersionId = versionId;
+        await writeSettings(settings);
+      }
       const instanceDirectory = path.join(
         settings.gameDirectory,
         'simple-craft',
         'profiles',
         profile.id,
       );
-      if (profile.loader === 'forge') {
+      if (profile.loader === 'forge' && !offlineOnly) {
         await modrinthService.syncMods(
           instanceDirectory,
           profile.mods,
-          profile.versionId,
+          profile.minecraftVersion,
           event.sender,
         );
       }
-      return minecraftService.launchVersion(
+      const result = await minecraftService.launchVersion(
         versionId,
         session,
         {
@@ -896,6 +1036,13 @@ const registerIpcHandlers = () => {
         event.sender,
         instanceDirectory,
       );
+      return offlineOnly
+        ? {
+            ...result,
+            message:
+              'Minecraft started in authenticated offline mode. Single-player is supported; online servers and Realms may be unavailable.',
+          }
+        : result;
     });
   });
 

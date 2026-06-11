@@ -110,6 +110,8 @@ test('オンラインセッションから起動引数を生成する', async ()
     version: fixtureVersion,
     session: {
       accessToken: 'test-token',
+      clientId: '00000000-0000-0000-0000-000000000001',
+      xuid: '1234567890123456',
       mode: 'online',
       profile: {
         id: '00000000000000000000000000000000',
@@ -137,6 +139,8 @@ test('spawnへ渡すcommand/args/cwdを検証する', async () => {
     version: fixtureVersion,
     session: {
       accessToken: 'test-token',
+      clientId: '00000000-0000-0000-0000-000000000001',
+      xuid: '1234567890123456',
       mode: 'online',
       profile: {
         id: '00000000000000000000000000000000',

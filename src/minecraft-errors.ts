@@ -9,7 +9,14 @@ export type MinecraftErrorCategory =
   | 'java'
   | 'arguments'
   | 'spawn'
-  | 'crash';
+  | 'crash'
+  | 'forge-installer'
+  | 'forge-profile'
+  | 'forge-version-json'
+  | 'forge-library'
+  | 'forge-processor'
+  | 'offline-auth'
+  | 'offline-files';
 
 export class MinecraftError extends Error {
   constructor(

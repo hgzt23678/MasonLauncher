@@ -2,7 +2,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Version, type ResolvedVersion } from '@xmcl/core';
 import {
-  installForgeTask,
   installJavaRuntimeTask,
   type JavaRuntimeManifest,
   type MinecraftVersion,
@@ -14,6 +13,7 @@ import type {
   LauncherLogLevel,
   LauncherLogStage,
 } from './diagnostics';
+import { ForgeService } from './forge-service';
 import {
   MinecraftDownloader,
   type MinecraftDownloadProgress,
@@ -29,10 +29,14 @@ import {
   resolveJavaExecutable,
   resolveRuntimePlatformKey,
 } from './launcher-utils';
+import { installXmclUndiciCompatibility } from './xmcl-compat';
+
+installXmclUndiciCompatibility();
 
 export type ProgressEvent = {
   phase:
     | 'manifest'
+    | 'authentication'
     | 'version-json'
     | 'client'
     | 'libraries'
@@ -70,6 +74,7 @@ export class MinecraftService {
   private readonly downloader: MinecraftDownloader;
   private readonly resolver: MinecraftLaunchResolver;
   private readonly runner: MinecraftProcessRunner;
+  private readonly forgeService: ForgeService;
 
   constructor(
     private readonly gameDirectory: () => Promise<string>,
@@ -79,6 +84,14 @@ export class MinecraftService {
     this.downloader = new MinecraftDownloader(gameDirectory, log);
     this.resolver = new MinecraftLaunchResolver(log);
     this.runner = new MinecraftProcessRunner(log);
+    this.forgeService = new ForgeService(gameDirectory, log, {
+      prepareInstalledVersion: async (versionId, offlineOnly) =>
+        this.downloader.prepareInstalledVersion(
+          versionId,
+          () => undefined,
+          { offlineOnly },
+        ),
+    });
   }
 
   private report(sender: WebContents, progress: ProgressEvent) {
@@ -96,6 +109,10 @@ export class MinecraftService {
 
   async getRemoteVersions() {
     return (await this.downloader.getManifest()) as MinecraftVersion[];
+  }
+
+  async getForgeBuilds(minecraftVersion: string) {
+    return this.forgeService.getBuilds(minecraftVersion);
   }
 
   private taskContext(
@@ -233,7 +250,11 @@ export class MinecraftService {
     };
   }
 
-  private async ensureJava(version: ResolvedVersion, sender: WebContents) {
+  private async ensureJava(
+    version: ResolvedVersion,
+    sender: WebContents,
+    offlineOnly = false,
+  ) {
     const component = version.javaVersion.component;
     const runtimeDirectory = path.join(this.runtimeRoot, component);
     const executable = resolveJavaExecutable(runtimeDirectory);
@@ -246,6 +267,18 @@ export class MinecraftService {
       });
       return executable;
     } catch {
+      if (offlineOnly) {
+        throw new MinecraftError(
+          `Java runtime is not available locally: ${executable}`,
+          'java',
+          'JAVA_NOT_FOUND_OFFLINE',
+          {
+            component,
+            majorVersion: version.javaVersion.majorVersion,
+            executable,
+          },
+        );
+      }
       this.report(sender, {
         phase: 'java',
         percent: 0,
@@ -288,89 +321,54 @@ export class MinecraftService {
     return executable;
   }
 
-  async ensureForge(minecraftVersion: string, sender: WebContents) {
+  async ensureForge(
+    minecraftVersion: string,
+    loaderVersion: string,
+    sender: WebContents,
+    offlineOnly = false,
+  ) {
+    if (offlineOnly) {
+      return this.forgeService.verifyReady(
+        minecraftVersion,
+        loaderVersion,
+        true,
+      );
+    }
     const gameDirectory = await this.gameDirectory();
-    const baseVersion = await Version.parse(gameDirectory, minecraftVersion);
-    const java = await this.ensureJava(baseVersion, sender);
-    const promotionsUrl =
-      'https://files.minecraftforge.net/net/minecraftforge/forge/promotions_slim.json';
-    const promotionsResponse = await fetch(promotionsUrl);
-    if (!promotionsResponse.ok) {
-      throw new MinecraftError(
-        `Forgeバージョン一覧を取得できません: HTTP ${promotionsResponse.status}`,
-        'download',
-        `HTTP_${promotionsResponse.status}`,
-        { url: promotionsUrl },
-      );
-    }
-    const promotions = (await promotionsResponse.json()) as {
-      promos: Record<string, string>;
-    };
-    const forgeVersion =
-      promotions.promos[`${minecraftVersion}-recommended`] ??
-      promotions.promos[`${minecraftVersion}-latest`];
-    if (!forgeVersion) {
-      throw new MinecraftError(
-        `Minecraft ${minecraftVersion} に対応するForgeが見つかりません。`,
-        'download',
-        'FORGE_NOT_FOUND',
-      );
-    }
-
-    const installedVersionId = `${minecraftVersion}-forge-${forgeVersion}`;
+    let baseVersion: ResolvedVersion;
     try {
-      await this.downloader.prepareInstalledVersion(
-        installedVersionId,
-        (progress) => this.reportDownload(sender, progress),
-      );
-      this.log('info', 'forge', '既存のForge環境を検証しました。', {
-        installedVersionId,
-      });
-      return installedVersionId;
+      baseVersion = await Version.parse(gameDirectory, minecraftVersion);
     } catch (error) {
-      this.log('warn', 'forge', 'Forge環境をインストールします。', {
-        installedVersionId,
-        reason: error instanceof Error ? error.message : String(error),
-      });
-      this.report(sender, {
-        phase: 'forge',
-        percent: 0,
-        message: `Forge ${forgeVersion} を準備しています`,
-      });
+      throw new MinecraftError(
+        `Forge parent version could not be resolved: ${minecraftVersion}`,
+        'forge-version-json',
+        'FORGE_PARENT_RESOLUTION_FAILED',
+        { minecraftVersion },
+        { cause: error },
+      );
     }
-
-    const artifactVersion = `${minecraftVersion}-${forgeVersion}`;
-    const task = installForgeTask(
-      {
-        mcversion: minecraftVersion,
-        version: forgeVersion,
-        installer: {
-          path: `net/minecraftforge/forge/${artifactVersion}/forge-${artifactVersion}-installer.jar`,
-        },
-      },
-      gameDirectory,
-      {
+    const java = await this.ensureJava(baseVersion, sender);
+    try {
+      return await this.forgeService.ensureInstalled(
+        minecraftVersion,
+        loaderVersion,
         java,
-        side: 'client',
-        mavenHost: ['https://maven.minecraftforge.net'],
-        librariesDownloadConcurrency: 8,
-      },
-    );
-    const installed = await task.startAndWait(
-      this.taskContext(
-        sender,
-        task,
-        'forge',
-        `Forge ${forgeVersion} をインストールしています`,
-      ),
-    );
-    await this.downloader.prepareInstalledVersion(installed, (progress) =>
-      this.reportDownload(sender, progress),
-    );
-    this.log('info', 'forge', 'Forgeのインストールが完了しました。', {
-      installedVersionId: installed,
-    });
-    return installed;
+        (progress) =>
+          this.report(sender, {
+            phase: 'forge',
+            ...progress,
+          }),
+      );
+    } catch (error) {
+      const failure = this.forgeService.normalizeError(error);
+      this.report(sender, {
+        phase: 'error',
+        percent: 0,
+        message: failure.message,
+        category: failure.category,
+      });
+      throw failure;
+    }
   }
 
   async launchVersion(
@@ -400,8 +398,13 @@ export class MinecraftService {
       const prepared = await this.downloader.prepareInstalledVersion(
         versionId,
         (progress) => this.reportDownload(sender, progress),
+        { offlineOnly: session.mode === 'authenticated-offline' },
       );
-      const javaPath = await this.ensureJava(prepared.version, sender);
+      const javaPath = await this.ensureJava(
+        prepared.version,
+        sender,
+        session.mode === 'authenticated-offline',
+      );
 
       this.report(sender, {
         phase: 'resolve',

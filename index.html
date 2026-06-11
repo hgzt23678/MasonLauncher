@@ -273,9 +273,16 @@
           <input id="profile-name-input" type="text" maxlength="40" placeholder="例: バニラ最新" />
         </div>
         <div class="settings-section">
-          <label for="profile-version-select">Minecraft バージョン</label>
-          <div class="select-wrap">
-            <select id="profile-version-select"></select>
+          <div class="profile-type-tabs" role="tablist" aria-label="プロファイル種類">
+            <button type="button" data-profile-tab="vanilla" class="active">Vanilla</button>
+            <button type="button" data-profile-tab="forge">Forge</button>
+            <button type="button" data-profile-tab="modrinth">Modrinth</button>
+          </div>
+          <div id="profile-vanilla-panel">
+            <label for="profile-version-select">Minecraft バージョン</label>
+            <div class="select-wrap">
+              <select id="profile-version-select"></select>
+            </div>
           </div>
         </div>
         <div class="settings-section">
@@ -286,6 +293,17 @@
               <option value="forge">Forge（推奨版を自動導入）</option>
             </select>
           </div>
+        </div>
+        <div class="settings-section forge-version-panel" id="profile-forge-panel" hidden>
+          <label for="profile-forge-minecraft-select">Minecraft バージョン</label>
+          <div class="select-wrap">
+            <select id="profile-forge-minecraft-select"></select>
+          </div>
+          <label for="profile-forge-version-select">Forge build</label>
+          <div class="select-wrap">
+            <select id="profile-forge-version-select"></select>
+          </div>
+          <p id="profile-forge-build-status">Forge buildを選択してください。</p>
         </div>
         <div class="settings-section memory-settings">
           <div>

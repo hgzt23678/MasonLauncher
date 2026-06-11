@@ -261,6 +261,33 @@ test('公式メタデータ構造から全ファイルを取得・再利用し�
   const third = await downloader.prepareVersion('test-version');
   assert.equal(third.client.downloaded, true);
   assert.equal(requests.get('/client.jar'), (clientRequests ?? 0) + 1);
+
+  const libraryPath = path.join(
+    root,
+    'libraries',
+    'example',
+    'library',
+    '1.0',
+    'library-1.0.jar',
+  );
+  await fs.rm(libraryPath, { force: true });
+  const requestsBeforeOfflineCheck = [...requests.values()].reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+  await assert.rejects(
+    downloader.prepareInstalledVersion('test-version', undefined, {
+      offlineOnly: true,
+    }),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.category === 'offline-files' &&
+      error.code === 'LOCAL_FILE_MISSING_OR_INVALID',
+  );
+  assert.equal(
+    [...requests.values()].reduce((sum, count) => sum + count, 0),
+    requestsBeforeOfflineCheck,
+  );
 });
 
 test('DNS失敗をnetworkカテゴリとして分類する', async () => {

@@ -45,6 +45,44 @@ export type ResolvedMinecraftLaunch = {
 const findUnresolvedPlaceholder = (values: readonly string[]) =>
   values.find((value) => /\$\{[^}]+\}/.test(value));
 
+export const parseJavaMajorVersion = (versionLine: string) => {
+  const match = versionLine.match(/version\s+"([^"]+)"/i);
+  if (!match) return undefined;
+  const parts = match[1].split(/[._+-]/);
+  const first = Number.parseInt(parts[0], 10);
+  if (!Number.isFinite(first)) return undefined;
+  if (first === 1) {
+    const legacy = Number.parseInt(parts[1], 10);
+    return Number.isFinite(legacy) ? legacy : undefined;
+  }
+  return first;
+};
+
+export const resolveMicrosoftLaunchPlaceholders = (
+  values: readonly string[],
+  session: Pick<MinecraftSession, 'clientId' | 'xuid'>,
+) => {
+  if (!session.clientId.trim()) {
+    throw new MinecraftError(
+      'Microsoft Application IDが起動セッションにありません。',
+      'arguments',
+      'MISSING_CLIENT_ID',
+    );
+  }
+  if (!session.xuid.trim()) {
+    throw new MinecraftError(
+      'Xbox User IDが起動セッションにありません。',
+      'arguments',
+      'MISSING_XUID',
+    );
+  }
+  return values.map((value) =>
+    value
+      .replaceAll('${clientid}', session.clientId)
+      .replaceAll('${auth_xuid}', session.xuid),
+  );
+};
+
 const readJavaVersion = async (javaPath: string) => {
   const probe =
     process.platform === 'win32' &&
@@ -85,7 +123,10 @@ export class MinecraftLaunchResolver {
     javaPath: string;
     nativesDirectory?: string;
   }): Promise<ResolvedMinecraftLaunch> {
-    if (input.session.mode !== 'online') {
+    if (
+      input.session.mode !== 'online' &&
+      input.session.mode !== 'authenticated-offline'
+    ) {
       throw new MinecraftError(
         'Minecraftの起動にはMicrosoft/Minecraft Services認証が必要です。',
         'authentication',
@@ -116,6 +157,14 @@ export class MinecraftLaunchResolver {
         { cause: error },
       );
     }
+    if (!version.mainClass?.trim()) {
+      throw new MinecraftError(
+        `Minecraft version ${input.versionId} does not define a mainClass.`,
+        'arguments',
+        'MAIN_CLASS_MISSING',
+        { versionId: input.versionId },
+      );
+    }
     const nativesDirectory =
       input.nativesDirectory ??
       path.join(
@@ -137,7 +186,12 @@ export class MinecraftLaunchResolver {
     let generated: string[];
     try {
       generated = await generateArguments(options);
+      generated = resolveMicrosoftLaunchPlaceholders(
+        generated,
+        input.session,
+      );
     } catch (error) {
+      if (error instanceof MinecraftError) throw error;
       throw new MinecraftError(
         'Minecraft起動引数の生成に失敗しました。',
         'arguments',
@@ -162,9 +216,39 @@ export class MinecraftLaunchResolver {
         'UNRESOLVED_PLACEHOLDER',
       );
     }
+    const classpathFlag = args.findIndex(
+      (argument) => argument === '-cp' || argument === '-classpath',
+    );
+    const generatedClasspath =
+      classpathFlag >= 0 ? args[classpathFlag + 1] : undefined;
+    if (!generatedClasspath?.trim()) {
+      throw new MinecraftError(
+        `Minecraft version ${input.versionId} did not produce a classpath.`,
+        'arguments',
+        'CLASSPATH_BUILD_FAILED',
+        { versionId: input.versionId },
+      );
+    }
     const javaVersion = await readJavaVersion(command);
-    const classpathEntries =
-      version.libraries.filter((library) => !library.isNative).length + 1;
+    const javaMajorVersion = parseJavaMajorVersion(javaVersion);
+    if (
+      javaMajorVersion !== undefined &&
+      javaMajorVersion !== version.javaVersion.majorVersion
+    ) {
+      throw new MinecraftError(
+        `Java ${version.javaVersion.majorVersion} is required, but Java ${javaMajorVersion} was selected.`,
+        'java',
+        'JAVA_VERSION_MISMATCH',
+        {
+          javaPath: command,
+          requiredMajorVersion: version.javaVersion.majorVersion,
+          actualMajorVersion: javaMajorVersion,
+        },
+      );
+    }
+    const classpathEntries = generatedClasspath
+      .split(path.delimiter)
+      .filter(Boolean).length;
     this.log('info', 'java', 'Minecraftで使用するJavaを確認しました。', {
       executable: command,
       version: javaVersion,
@@ -177,6 +261,7 @@ export class MinecraftLaunchResolver {
       nativesDirectory,
       argumentCount: args.length,
       cwd: input.gamePath,
+      sessionMode: input.session.mode,
     });
     return {
       command,

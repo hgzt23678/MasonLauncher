@@ -21,6 +21,13 @@ import type {
   LauncherLogLevel,
   LauncherLogStage,
 } from './diagnostics';
+import { MinecraftError } from './minecraft-errors';
+import {
+  createOfflineAuthCache,
+  evaluateOfflineEligibility,
+  type OfflineAuthCache,
+  type OfflineEligibility,
+} from './offline-auth-cache';
 
 const microsoftScopes = ['XboxLive.SignIn', 'XboxLive.offline_access'];
 const xboxUserAuthenticateUrl =
@@ -50,6 +57,7 @@ type XboxTokenResponse = {
   DisplayClaims: {
     xui: Array<{
       uhs: string;
+      xid?: string;
     }>;
   };
 };
@@ -67,6 +75,7 @@ export type AuthState = {
   signedIn: boolean;
   secureStorageAvailable: boolean;
   diagnostic: EntraDiagnostic;
+  offline: OfflineEligibility;
   profile: {
     id: string;
     name: string;
@@ -76,8 +85,10 @@ export type AuthState = {
 
 export type MinecraftSession = {
   accessToken: string;
+  clientId: string;
+  xuid: string;
   profile: MicrosoftMinecraftProfile;
-  mode: 'online';
+  mode: 'online' | 'authenticated-offline';
 };
 
 export type DeviceCodeInfo = {
@@ -217,6 +228,10 @@ export class AuthService {
     return path.join(this.userDataPath, 'minecraft-profile.json');
   }
 
+  private get offlineAuthorizationFile() {
+    return path.join(this.userDataPath, 'minecraft-offline-authorization.bin');
+  }
+
   private get configuredClientIdFile() {
     return path.join(this.userDataPath, 'microsoft-client-id.txt');
   }
@@ -237,6 +252,7 @@ export class AuthService {
       await Promise.all([
         fs.rm(this.cacheFile, { force: true }),
         fs.rm(this.profileFile, { force: true }),
+        fs.rm(this.offlineAuthorizationFile, { force: true }),
       ]);
       this.log(
         'info',
@@ -346,6 +362,58 @@ export class AuthService {
     await fs.writeFile(this.cacheFile, encrypted.toString('base64'), 'utf8');
   }
 
+  private async readOfflineAuthorization(): Promise<OfflineAuthCache | null> {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    try {
+      const encrypted = Buffer.from(
+        await fs.readFile(this.offlineAuthorizationFile, 'utf8'),
+        'base64',
+      );
+      const parsed = JSON.parse(
+        safeStorage.decryptString(encrypted),
+      ) as OfflineAuthCache;
+      return parsed?.schemaVersion === 1 ? parsed : null;
+    } catch (error) {
+      if (
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        error.code !== 'ENOENT'
+      ) {
+        this.log(
+          'warn',
+          'auth:ownership',
+          'Cached offline authorization could not be read.',
+          { code: String(error.code) },
+        );
+      }
+      return null;
+    }
+  }
+
+  private async writeOfflineAuthorization(cache: OfflineAuthCache) {
+    if (!safeStorage.isEncryptionAvailable()) {
+      this.log(
+        'warn',
+        'auth:ownership',
+        'Offline authorization was not cached because secure storage is unavailable.',
+      );
+      return;
+    }
+    await fs.mkdir(this.userDataPath, { recursive: true });
+    const encrypted = safeStorage.encryptString(JSON.stringify(cache));
+    await fs.writeFile(
+      this.offlineAuthorizationFile,
+      encrypted.toString('base64'),
+      'utf8',
+    );
+    this.log('info', 'auth:ownership', 'Offline authorization cache updated.', {
+      ownershipVerifiedAt: cache.ownershipVerifiedAt,
+      expiresAt: cache.expiresAt,
+      cacheDays: 30,
+    });
+  }
+
   private async readProfile(): Promise<CachedProfile> {
     try {
       const profile = JSON.parse(await fs.readFile(this.profileFile, 'utf8')) as CachedProfile;
@@ -384,12 +452,27 @@ export class AuthService {
 
   async getState(): Promise<AuthState> {
     const account = await this.getAccount();
+    const offlineCache = await this.readOfflineAuthorization();
+    const offline = evaluateOfflineEligibility(
+      offlineCache,
+      this.clientId,
+    );
     return {
       configured: Boolean(this.publicClient),
       signedIn: Boolean(account && this.profile),
       secureStorageAvailable: safeStorage.isEncryptionAvailable(),
       diagnostic: this.diagnostic,
-      profile: account ? this.profile : null,
+      offline,
+      profile:
+        account && this.profile
+          ? this.profile
+          : offline.allowed && offlineCache
+            ? {
+                id: offlineCache.profile.id,
+                name: offlineCache.profile.name,
+                skinUrl: offlineCache.profile.skins[0]?.url,
+              }
+            : null,
     };
   }
 
@@ -697,6 +780,35 @@ export class AuthService {
         'missing_xui',
       );
     }
+    let xuid = xui.xid;
+    if (!xuid) {
+      const xboxLiveToken = await this.requestJson<XboxTokenResponse>(
+        xboxXstsAuthorizeUrl,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            Properties: {
+              SandboxId: 'RETAIL',
+              UserTokens: [xboxToken.Token],
+              OptionalDisplayClaims: ['mgt', 'mgs', 'umg'],
+            },
+            RelyingParty: 'http://xboxlive.com',
+            TokenType: 'JWT',
+          }),
+        },
+        'Xbox User ID取得',
+        'xsts',
+      );
+      xuid = xboxLiveToken.DisplayClaims.xui[0]?.xid;
+    }
+    if (!xuid) {
+      throw new AuthStageError(
+        'xsts',
+        'XboxプロフィールにXUIDが含まれていません。',
+        'missing_xuid',
+      );
+    }
 
     let minecraftAuth: MinecraftTokenResponse;
     try {
@@ -755,8 +867,17 @@ export class AuthService {
       'profile',
     );
     await this.writeProfile(profile);
+    await this.writeOfflineAuthorization(
+      createOfflineAuthCache({
+        clientId: this.clientId,
+        xuid,
+        profile,
+      }),
+    );
     return {
       accessToken: minecraftAuth.access_token,
+      clientId: this.clientId,
+      xuid,
       profile,
       mode: 'online',
     };
@@ -922,6 +1043,42 @@ export class AuthService {
     return this.exchangeMicrosoftToken(result.accessToken);
   }
 
+  async getCachedOfflineSession(): Promise<MinecraftSession> {
+    const cache = await this.readOfflineAuthorization();
+    const eligibility = evaluateOfflineEligibility(cache, this.clientId);
+    this.log(
+      eligibility.allowed ? 'info' : 'warn',
+      'auth:ownership',
+      eligibility.allowed
+        ? 'Authenticated offline launch allowed.'
+        : 'Authenticated offline launch denied.',
+      {
+        reason: eligibility.reason,
+        ownershipVerifiedAt: eligibility.ownershipVerifiedAt,
+        expiresAt: eligibility.expiresAt,
+      },
+    );
+    if (!eligibility.allowed || !cache) {
+      throw new MinecraftError(
+        eligibility.message,
+        'offline-auth',
+        `OFFLINE_${eligibility.reason.toUpperCase().replaceAll('-', '_')}`,
+        {
+          reason: eligibility.reason,
+          ownershipVerifiedAt: eligibility.ownershipVerifiedAt,
+          expiresAt: eligibility.expiresAt,
+        },
+      );
+    }
+    return {
+      accessToken: '0',
+      clientId: cache.clientId,
+      xuid: cache.xuid,
+      profile: cache.profile,
+      mode: 'authenticated-offline',
+    };
+  }
+
   async logout(): Promise<AuthState> {
     const accounts = await this.publicClient?.getAllAccounts();
     for (const account of accounts ?? []) {
@@ -939,6 +1096,7 @@ export class AuthService {
     await Promise.all([
       fs.rm(this.cacheFile, { force: true }),
       fs.rm(this.profileFile, { force: true }),
+      fs.rm(this.offlineAuthorizationFile, { force: true }),
     ]);
     return this.getState();
   }

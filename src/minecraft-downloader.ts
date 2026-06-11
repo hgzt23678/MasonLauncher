@@ -330,6 +330,7 @@ export class MinecraftDownloader {
     label: string,
     force = false,
     quiet = false,
+    offlineOnly = false,
   ): Promise<DownloadResult> {
     if (!force) {
       const existing = await this.validateFile(destination, descriptor);
@@ -342,6 +343,14 @@ export class MinecraftDownloader {
           });
         }
         return { downloaded: false, path: destination };
+      }
+      if (offlineOnly) {
+        throw new MinecraftError(
+          `${label} is missing or failed local verification.`,
+          'offline-files',
+          'LOCAL_FILE_MISSING_OR_INVALID',
+          { destination, ...existing },
+        );
       }
       if (existing.reason !== 'missing') {
         this.log('warn', 'files', `${label} が破損しているため再取得します。`, {
@@ -453,14 +462,23 @@ export class MinecraftDownloader {
     descriptor: DownloadDescriptor,
     destination: string,
     label: string,
+    offlineOnly = false,
   ) {
-    let result = await this.downloadFile(descriptor, destination, label);
+    let result = await this.downloadFile(
+      descriptor,
+      destination,
+      label,
+      false,
+      false,
+      offlineOnly,
+    );
     try {
       return {
         value: await this.readJsonFile<T>(destination, label),
         result,
       };
     } catch (error) {
+      if (offlineOnly) throw error;
       if (result.downloaded) throw error;
       await fs.rm(destination, { force: true });
       result = await this.downloadFile(descriptor, destination, label, true);
@@ -475,6 +493,7 @@ export class MinecraftDownloader {
     root: string,
     version: ResolvedVersion,
     onProgress: ProgressWriter,
+    offlineOnly = false,
   ) {
     const stats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
     const libraries = version.libraries;
@@ -499,6 +518,9 @@ export class MinecraftDownloader {
             },
             destination,
             `library ${library.name}`,
+            false,
+            false,
+            offlineOnly,
           );
           stats[result.downloaded ? 'downloaded' : 'skipped'] += 1;
           onProgress({
@@ -524,6 +546,7 @@ export class MinecraftDownloader {
     root: string,
     version: ResolvedVersion,
     onProgress: ProgressWriter,
+    offlineOnly = false,
   ) {
     const file = version.logging?.client?.file;
     if (!file?.url || !file.id) return undefined;
@@ -545,6 +568,9 @@ export class MinecraftDownloader {
       },
       destination,
       'Minecraft logging config',
+      false,
+      false,
+      offlineOnly,
     );
     onProgress({
       phase: 'logging',
@@ -559,6 +585,7 @@ export class MinecraftDownloader {
     root: string,
     version: ResolvedVersion,
     onProgress: ProgressWriter,
+    offlineOnly = false,
   ) {
     const stats: DownloadStats = { downloaded: 0, skipped: 0, failed: 0 };
     const index = version.assetIndex;
@@ -587,6 +614,7 @@ export class MinecraftDownloader {
       },
       indexPath,
       `asset index ${index.id}`,
+      offlineOnly,
     );
     if (!isRecord(assetIndex) || !isRecord(assetIndex.objects)) {
       throw new MinecraftError(
@@ -637,6 +665,7 @@ export class MinecraftDownloader {
           `asset ${name}`,
           false,
           true,
+          offlineOnly,
         );
         stats[result.downloaded ? 'downloaded' : 'skipped'] += 1;
         completed += 1;
@@ -688,7 +717,8 @@ export class MinecraftDownloader {
     destination: string,
     exclusions: readonly string[],
   ) {
-    const zip = await open(archive, {
+    const archiveBuffer = await fs.readFile(archive);
+    const zip = await open(archiveBuffer, {
       lazyEntries: true,
       autoClose: false,
     });
@@ -795,6 +825,7 @@ export class MinecraftDownloader {
     root: string,
     version: ResolvedVersion,
     onProgress: ProgressWriter,
+    offlineOnly = false,
   ): Promise<PreparedMinecraftVersion> {
     const clientPath = safeRelativePath(
       root,
@@ -821,6 +852,9 @@ export class MinecraftDownloader {
       },
       clientPath,
       `Minecraft client.jar ${version.minecraftVersion}`,
+      false,
+      false,
+      offlineOnly,
     );
     this.log('info', 'files', 'Minecraft client.jarを検証しました。', {
       destination: clientPath,
@@ -835,9 +869,24 @@ export class MinecraftDownloader {
       file: clientPath,
     });
 
-    const libraries = await this.downloadLibraries(root, version, onProgress);
-    const logging = await this.downloadLogging(root, version, onProgress);
-    const assets = await this.downloadAssets(root, version, onProgress);
+    const libraries = await this.downloadLibraries(
+      root,
+      version,
+      onProgress,
+      offlineOnly,
+    );
+    const logging = await this.downloadLogging(
+      root,
+      version,
+      onProgress,
+      offlineOnly,
+    );
+    const assets = await this.downloadAssets(
+      root,
+      version,
+      onProgress,
+      offlineOnly,
+    );
     const nativesDirectory = await this.extractNatives(
       root,
       version,
@@ -919,6 +968,7 @@ export class MinecraftDownloader {
   async prepareInstalledVersion(
     versionId: string,
     onProgress: ProgressWriter = () => undefined,
+    options: { offlineOnly?: boolean } = {},
   ) {
     const root = await this.gameDirectory();
     let version: ResolvedVersion;
@@ -933,6 +983,11 @@ export class MinecraftDownloader {
         { cause: error },
       );
     }
-    return this.prepareResolvedVersion(root, version, onProgress);
+    return this.prepareResolvedVersion(
+      root,
+      version,
+      onProgress,
+      options.offlineOnly === true,
+    );
   }
 }

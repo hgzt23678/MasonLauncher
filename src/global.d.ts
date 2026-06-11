@@ -11,6 +11,13 @@ type AuthState = {
   signedIn: boolean;
   secureStorageAvailable: boolean;
   diagnostic: EntraDiagnostic;
+  offline: {
+    allowed: boolean;
+    reason: string;
+    message: string;
+    ownershipVerifiedAt: string | null;
+    expiresAt: string | null;
+  };
   profile: {
     id: string;
     name: string;
@@ -54,6 +61,11 @@ type AuthFlowState = {
 type LaunchProfile = {
   id: string;
   name: string;
+  profileType: 'vanilla' | 'forge';
+  loaderType: 'vanilla' | 'forge';
+  minecraftVersion: string;
+  loaderVersion: string | null;
+  resolvedVersionId: string;
   versionId: string;
   loader: 'vanilla' | 'forge';
   minMemory: number;
@@ -127,6 +139,17 @@ declare global {
       saveProfile: (
         profile: Record<string, unknown>,
       ) => Promise<LauncherState>;
+      getForgeBuilds: (
+        minecraftVersion: string,
+      ) => Promise<
+        Array<{
+          minecraftVersion: string;
+          loaderVersion: string;
+          artifactVersion: string;
+          resolvedVersionId: string;
+          installerUrl: string;
+        }>
+      >;
       selectProfile: (profileId: string) => Promise<LauncherState>;
       deleteProfile: (profileId: string) => Promise<LauncherState>;
       searchModrinth: (

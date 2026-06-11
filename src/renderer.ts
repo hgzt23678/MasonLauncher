@@ -15,6 +15,13 @@ type AuthState = {
   signedIn: boolean;
   secureStorageAvailable: boolean;
   diagnostic: EntraDiagnostic;
+  offline: {
+    allowed: boolean;
+    reason: string;
+    message: string;
+    ownershipVerifiedAt: string | null;
+    expiresAt: string | null;
+  };
   profile: {
     id: string;
     name: string;
@@ -73,11 +80,24 @@ type ProfileMod = {
 type LaunchProfile = {
   id: string;
   name: string;
+  profileType: 'vanilla' | 'forge';
+  loaderType: 'vanilla' | 'forge';
+  minecraftVersion: string;
+  loaderVersion: string | null;
+  resolvedVersionId: string;
   versionId: string;
   loader: 'vanilla' | 'forge';
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
+};
+
+type ForgeBuild = {
+  minecraftVersion: string;
+  loaderVersion: string;
+  artifactVersion: string;
+  resolvedVersionId: string;
+  installerUrl: string;
 };
 
 type ModrinthProject = ProfileMod & {
@@ -130,6 +150,13 @@ const failureLabels: Record<string, string> = {
   arguments: '起動引数生成失敗',
   spawn: 'プロセス起動失敗',
   crash: 'Minecraftクラッシュ',
+  'forge-installer': 'Forge installer取得失敗',
+  'forge-profile': 'Forge install_profile解析失敗',
+  'forge-version-json': 'Forge version JSON抽出失敗',
+  'forge-library': 'Forge library取得失敗',
+  'forge-processor': 'Forge processor失敗',
+  'offline-auth': 'オフライン起動認可失敗',
+  'offline-files': 'ローカルファイル不足',
 };
 
 const formatCategorizedMessage = (
@@ -173,6 +200,14 @@ const demoState: LauncherState = {
     configured: true,
     signedIn: true,
     secureStorageAvailable: true,
+    offline: {
+      allowed: true,
+      reason: 'allowed',
+      message:
+        'Cached authenticated offline launch is available for single-player use.',
+      ownershipVerifiedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 30 * 86400000).toISOString(),
+    },
     diagnostic: {
       status: 'ready',
       message: 'Microsoftはデバイスコードを発行できます。',
@@ -191,6 +226,11 @@ const demoState: LauncherState = {
   profiles: [
     {
       id: 'default-profile',
+      profileType: 'vanilla',
+      loaderType: 'vanilla',
+      minecraftVersion: '1.21.11',
+      loaderVersion: null,
+      resolvedVersionId: '1.21.11',
       name: '最新バニラ',
       versionId: '1.21.11',
       loader: 'vanilla',
@@ -200,6 +240,11 @@ const demoState: LauncherState = {
     },
     {
       id: 'forge-profile',
+      profileType: 'forge',
+      loaderType: 'forge',
+      minecraftVersion: '1.20.1',
+      loaderVersion: '47.4.0',
+      resolvedVersionId: '1.20.1-forge-47.4.0',
       name: 'Forge Adventure',
       versionId: '1.20.1',
       loader: 'forge',
@@ -261,6 +306,17 @@ const api = window.launcher ?? {
     return demoState;
   },
   saveProfile: async () => demoState,
+  getForgeBuilds: async (minecraftVersion: string): Promise<ForgeBuild[]> => [
+    {
+      minecraftVersion,
+      loaderVersion: '47.4.0',
+      artifactVersion: `${minecraftVersion}-47.4.0`,
+      resolvedVersionId: `${minecraftVersion}-forge-47.4.0`,
+      installerUrl:
+        `https://maven.minecraftforge.net/net/minecraftforge/forge/` +
+        `${minecraftVersion}-47.4.0/forge-${minecraftVersion}-47.4.0-installer.jar`,
+    },
+  ],
   selectProfile: async () => demoState,
   deleteProfile: async () => demoState,
   searchModrinth: async (): Promise<ModrinthProject[]> => [
@@ -292,6 +348,13 @@ const api = window.launcher ?? {
   logout: async (): Promise<AuthState> => ({
     ...demoState.auth,
     signedIn: false,
+    offline: {
+      allowed: false,
+      reason: 'missing-cache',
+      message: 'A completed Microsoft login and ownership check is required.',
+      ownershipVerifiedAt: null,
+      expiresAt: null,
+    },
     profile: null,
   }),
   installVersion: demoAction,
@@ -383,6 +446,17 @@ const profileVersionSelect =
   byId<HTMLSelectElement>('profile-version-select');
 const profileLoaderSelect =
   byId<HTMLSelectElement>('profile-loader-select');
+const profileTabButtons = [
+  ...document.querySelectorAll<HTMLButtonElement>('[data-profile-tab]'),
+];
+const profileVanillaPanel = byId<HTMLElement>('profile-vanilla-panel');
+const profileForgePanel = byId<HTMLElement>('profile-forge-panel');
+const profileForgeMinecraftSelect =
+  byId<HTMLSelectElement>('profile-forge-minecraft-select');
+const profileForgeVersionSelect =
+  byId<HTMLSelectElement>('profile-forge-version-select');
+const profileForgeBuildStatus =
+  byId<HTMLElement>('profile-forge-build-status');
 const profileMinMemoryInput =
   byId<HTMLInputElement>('profile-min-memory-input');
 const profileMaxMemoryInput =
@@ -404,6 +478,8 @@ let busy = false;
 let toastTimer: number | undefined;
 let deviceCodeTimer: number | undefined;
 let developerLogs: LauncherLogEntry[] = [];
+let forgeBuilds: ForgeBuild[] = [];
+let activeProfileTab: 'vanilla' | 'forge' | 'modrinth' = 'vanilla';
 
 const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
   developerLogs = entries.slice(-500);
@@ -503,7 +579,7 @@ const selectedProfile = () =>
 const selectedVersion = () => {
   const profile = selectedProfile();
   return currentState?.availableVersions.find(
-    (version) => version.id === profile?.versionId,
+    (version) => version.id === profile?.minecraftVersion,
   );
 };
 
@@ -520,12 +596,20 @@ const renderAuth = (auth: AuthState) => {
   if (profileName) profileName.textContent = name;
   if (profileStatus) {
     profileStatus.textContent = auth.signedIn
-      ? 'Minecraft: Java Edition 認証済み'
+      ? auth.offline.allowed
+        ? `Minecraft: Java Edition 認証済み / キャッシュ期限 ${new Date(
+            auth.offline.expiresAt ?? '',
+          ).toLocaleDateString('ja-JP')}`
+        : 'Minecraft: Java Edition 認証済み'
+      : auth.offline.allowed
+        ? '認証済みオフライン起動が利用できます。シングルプレイ向けです。'
       : auth.configured
         ? 'Microsoftデバイスコードでログインできます'
         : 'このビルドにはMicrosoft認証設定がありません';
   }
-  if (logoutButton) logoutButton.hidden = !auth.signedIn;
+  if (logoutButton) {
+    logoutButton.hidden = !auth.signedIn && !auth.offline.allowed;
+  }
   if (loginButton) {
     loginButton.hidden = auth.signedIn;
     loginButton.disabled = !auth.configured;
@@ -564,7 +648,10 @@ const createProfileCard = (profile: LaunchProfile) => {
   const title = document.createElement('h4');
   title.textContent = profile.name;
   const version = document.createElement('p');
-  version.textContent = `Minecraft ${profile.versionId}`;
+  version.textContent =
+    profile.loaderType === 'forge'
+      ? `Minecraft ${profile.minecraftVersion} / Forge ${profile.loaderVersion ?? '未選択'}`
+      : `Minecraft ${profile.minecraftVersion}`;
   const memory = document.createElement('small');
   memory.textContent = `${profile.minMemory}–${profile.maxMemory} MB`;
 
@@ -604,7 +691,10 @@ const updateLaunchButton = () => {
     playButton.disabled = true;
     return;
   }
-  if (!currentState.auth.signedIn) {
+  if (
+    !currentState.auth.signedIn &&
+    !currentState.auth.offline.allowed
+  ) {
     playButton.disabled = false;
     if (title) title.textContent = 'LOGIN';
     if (sublabel) sublabel.textContent = '正規アカウントを接続';
@@ -650,7 +740,8 @@ const populateVersionSelect = (
 const renderState = (state: LauncherState) => {
   currentState = state;
   const profile = selectedProfile();
-  populateVersionSelect(versionSelect, profile?.versionId ?? '');
+  populateVersionSelect(versionSelect, profile?.minecraftVersion ?? '');
+  if (versionSelect) versionSelect.disabled = profile?.loaderType === 'forge';
   if (activeProfileName) {
     activeProfileName.textContent = profile?.name ?? 'プロファイル未選択';
   }
@@ -699,6 +790,107 @@ const refreshState = async () => {
   } finally {
     setLoading(false);
   }
+};
+
+const updateProfileSaveAvailability = () => {
+  if (!saveProfileButton) return;
+  const forgeSelected = profileLoaderSelect?.value === 'forge';
+  saveProfileButton.disabled =
+    forgeSelected && !profileForgeVersionSelect?.value;
+};
+
+const populateForgeMinecraftSelect = (value: string) => {
+  if (!profileForgeMinecraftSelect || !currentState) return;
+  profileForgeMinecraftSelect.replaceChildren();
+  for (const version of [...currentState.availableVersions]
+    .filter((candidate) => candidate.type === 'release')
+    .sort(compareVersionsByRelease)) {
+    profileForgeMinecraftSelect.add(
+      new Option(`Minecraft ${version.id}`, version.id),
+    );
+  }
+  if (
+    currentState.availableVersions.some(
+      (version) => version.id === value && version.type === 'release',
+    )
+  ) {
+    profileForgeMinecraftSelect.value = value;
+  }
+};
+
+const loadForgeBuilds = async (
+  minecraftVersion: string,
+  selectedLoaderVersion = '',
+) => {
+  if (!profileForgeVersionSelect || !profileForgeBuildStatus) return;
+  profileForgeVersionSelect.disabled = true;
+  profileForgeVersionSelect.replaceChildren();
+  profileForgeBuildStatus.textContent = 'Forge build一覧を取得しています...';
+  updateProfileSaveAvailability();
+  try {
+    forgeBuilds = await api.getForgeBuilds(minecraftVersion);
+    profileForgeVersionSelect.add(
+      new Option('Forge buildを選択してください', ''),
+    );
+    for (const build of forgeBuilds) {
+      profileForgeVersionSelect.add(
+        new Option(
+          `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`,
+          build.loaderVersion,
+        ),
+      );
+    }
+    if (
+      selectedLoaderVersion &&
+      forgeBuilds.some(
+        (build) => build.loaderVersion === selectedLoaderVersion,
+      )
+    ) {
+      profileForgeVersionSelect.value = selectedLoaderVersion;
+    }
+    profileForgeVersionSelect.disabled = forgeBuilds.length === 0;
+    profileForgeBuildStatus.textContent =
+      forgeBuilds.length > 0
+        ? selectedLoaderVersion
+          ? `${forgeBuilds.length} builds / 選択中: Forge ${profileForgeVersionSelect.value}`
+          : `${forgeBuilds.length} builds / Forge buildを選択してください。`
+        : `Minecraft ${minecraftVersion} に対応するForge buildがありません。`;
+  } catch (error) {
+    forgeBuilds = [];
+    profileForgeBuildStatus.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Forge build一覧を取得できませんでした。';
+    showToast(profileForgeBuildStatus.textContent, true);
+  } finally {
+    updateProfileSaveAvailability();
+  }
+};
+
+const setProfileTab = (
+  tab: 'vanilla' | 'forge' | 'modrinth',
+  updateLoader = true,
+) => {
+  activeProfileTab = tab;
+  for (const button of profileTabButtons) {
+    button.classList.toggle(
+      'active',
+      button.dataset.profileTab === activeProfileTab,
+    );
+  }
+  const legacyLoaderSection =
+    profileLoaderSelect?.closest<HTMLElement>('.settings-section');
+  if (profileVanillaPanel) profileVanillaPanel.hidden = tab !== 'vanilla';
+  if (legacyLoaderSection) legacyLoaderSection.hidden = true;
+  if (profileForgePanel) profileForgePanel.hidden = tab !== 'forge';
+  if (profileModsSection) profileModsSection.hidden = tab !== 'modrinth';
+
+  if (updateLoader && profileLoaderSelect) {
+    if (tab === 'vanilla') profileLoaderSelect.value = 'vanilla';
+    if (tab === 'forge') profileLoaderSelect.value = 'forge';
+  }
+  renderSelectedMods(editorProfile());
+  updateProfileSaveAvailability();
 };
 
 const renderSelectedMods = (profile: LaunchProfile | undefined) => {
@@ -762,13 +954,21 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   if (profileNameInput) profileNameInput.value = profile?.name ?? '';
   populateVersionSelect(
     profileVersionSelect,
-    profile?.versionId ??
-      selectedProfile()?.versionId ??
+    profile?.minecraftVersion ??
+      selectedProfile()?.minecraftVersion ??
       currentState.availableVersions[0]?.id ??
       '',
   );
+  const minecraftVersion =
+    profile?.minecraftVersion ??
+    selectedProfile()?.minecraftVersion ??
+    currentState.availableVersions.find(
+      (version) => version.type === 'release',
+    )?.id ??
+    '';
+  populateForgeMinecraftSelect(minecraftVersion);
   if (profileLoaderSelect) {
-    profileLoaderSelect.value = profile?.loader ?? 'vanilla';
+    profileLoaderSelect.value = profile?.loaderType ?? 'vanilla';
   }
   if (profileMinMemoryInput) {
     profileMinMemoryInput.value = String(
@@ -783,8 +983,28 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   if (deleteProfileButton) deleteProfileButton.hidden = !profile;
   modSearchResults?.replaceChildren();
   if (modSearchInput) modSearchInput.value = '';
+  forgeBuilds = [];
+  if (profileForgeVersionSelect) {
+    profileForgeVersionSelect.replaceChildren(
+      new Option('Forge buildを選択してください', ''),
+    );
+    profileForgeVersionSelect.disabled = true;
+  }
+  if (profileForgeBuildStatus) {
+    profileForgeBuildStatus.textContent =
+      'Forge buildを選択してください。';
+  }
   renderSelectedMods(profile);
   profileModal?.removeAttribute('hidden');
+  const initialTab =
+    profile?.loaderType === 'forge' ? 'forge' : 'vanilla';
+  setProfileTab(initialTab, false);
+  if (initialTab === 'forge' && minecraftVersion) {
+    void loadForgeBuilds(
+      minecraftVersion,
+      profile?.loaderVersion ?? '',
+    );
+  }
 };
 
 const editorProfile = () =>
@@ -796,11 +1016,32 @@ const saveProfileEditor = async (close = true) => {
   if (!saveProfileButton) return undefined;
   saveProfileButton.disabled = true;
   try {
+    const loader =
+      profileLoaderSelect?.value === 'forge' ? 'forge' : 'vanilla';
+    const minecraftVersion =
+      loader === 'forge'
+        ? profileForgeMinecraftSelect?.value ?? ''
+        : profileVersionSelect?.value ?? '';
+    const loaderVersion =
+      loader === 'forge'
+        ? profileForgeVersionSelect?.value ?? ''
+        : null;
+    if (loader === 'forge' && !loaderVersion) {
+      throw new Error('Forge buildを選択してください。');
+    }
     const state = await api.saveProfile({
       id: profileIdInput?.value || undefined,
       name: profileNameInput?.value ?? '',
-      versionId: profileVersionSelect?.value ?? '',
-      loader: profileLoaderSelect?.value ?? 'vanilla',
+      profileType: loader,
+      loaderType: loader,
+      minecraftVersion,
+      loaderVersion,
+      resolvedVersionId:
+        loader === 'forge'
+          ? `${minecraftVersion}-forge-${loaderVersion}`
+          : minecraftVersion,
+      versionId: minecraftVersion,
+      loader,
       minMemory: Number(profileMinMemoryInput?.value ?? 1024),
       maxMemory: Number(profileMaxMemoryInput?.value ?? 4096),
     });
@@ -822,7 +1063,7 @@ const saveProfileEditor = async (close = true) => {
     );
     return undefined;
   } finally {
-    saveProfileButton.disabled = false;
+    updateProfileSaveAvailability();
   }
 };
 
@@ -874,7 +1115,10 @@ playButton?.addEventListener('click', async () => {
   const profile = selectedProfile();
   const version = selectedVersion();
   if (!profile || !version || !currentState) return;
-  if (!currentState.auth.signedIn) {
+  if (
+    !currentState.auth.signedIn &&
+    !currentState.auth.offline.allowed
+  ) {
     openSettingsModal();
     return;
   }
@@ -910,6 +1154,8 @@ versionSelect?.addEventListener('change', async () => {
     renderState(
       await api.saveProfile({
         ...profile,
+        minecraftVersion: versionSelect.value,
+        resolvedVersionId: versionSelect.value,
         versionId: versionSelect.value,
       }),
     );
@@ -982,6 +1228,40 @@ deleteProfileButton?.addEventListener('click', async () => {
 
 profileLoaderSelect?.addEventListener('change', () => {
   renderSelectedMods(editorProfile());
+});
+
+for (const button of profileTabButtons) {
+  button.addEventListener('click', () => {
+    const tab = button.dataset.profileTab;
+    if (tab !== 'vanilla' && tab !== 'forge' && tab !== 'modrinth') {
+      return;
+    }
+    setProfileTab(tab);
+    if (
+      tab === 'forge' &&
+      profileForgeMinecraftSelect?.value &&
+      forgeBuilds.length === 0
+    ) {
+      void loadForgeBuilds(
+        profileForgeMinecraftSelect.value,
+        editorProfile()?.loaderVersion ?? '',
+      );
+    }
+  });
+}
+
+profileForgeMinecraftSelect?.addEventListener('change', () => {
+  if (!profileForgeMinecraftSelect.value) return;
+  void loadForgeBuilds(profileForgeMinecraftSelect.value);
+});
+
+profileForgeVersionSelect?.addEventListener('change', () => {
+  if (profileForgeBuildStatus) {
+    profileForgeBuildStatus.textContent = profileForgeVersionSelect.value
+      ? `Minecraft ${profileForgeMinecraftSelect?.value} / Forge ${profileForgeVersionSelect.value}`
+      : 'Forge buildを選択してください。';
+  }
+  updateProfileSaveAvailability();
 });
 
 modSearchButton?.addEventListener('click', async () => {

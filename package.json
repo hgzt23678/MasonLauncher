@@ -45,7 +45,9 @@
     "@xmcl/installer": "^6.1.2",
     "@xmcl/task": "^4.1.1",
     "@xmcl/unzip": "^2.1.2",
-    "electron-squirrel-startup": "^1.0.1"
+    "electron-squirrel-startup": "^1.0.1",
+    "fast-xml-parser": "^5.8.0",
+    "undici": "7.27.2"
   },
   "overrides": {
     "undici": "7.27.2"
