@@ -1,0 +1,53 @@
+{
+  "name": "simple-craft-launcher",
+  "productName": "Simple Craft Launcher",
+  "version": "1.4.1",
+  "description": "A standalone Minecraft Java launcher using Microsoft authentication and official Mojang metadata.",
+  "main": ".vite/build/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make",
+    "publish": "electron-forge publish",
+    "lint": "eslint --ext .ts,.tsx .",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/**/*.test.ts"
+  },
+  "keywords": [],
+  "author": "hgzt23678",
+  "license": "MIT",
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.2",
+    "@electron-forge/maker-deb": "^7.11.2",
+    "@electron-forge/maker-rpm": "^7.11.2",
+    "@electron-forge/maker-squirrel": "^7.11.2",
+    "@electron-forge/maker-zip": "^7.11.2",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.2",
+    "@electron-forge/plugin-fuses": "^7.11.2",
+    "@electron-forge/plugin-vite": "^7.11.2",
+    "@electron/fuses": "^1.8.0",
+    "@types/electron-squirrel-startup": "^1.0.2",
+    "@types/yazl": "^3.3.1",
+    "@typescript-eslint/eslint-plugin": "8.46.4",
+    "@typescript-eslint/parser": "8.46.4",
+    "electron": "42.4.0",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.32.0",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3",
+    "vite": "^6.4.3",
+    "yazl": "^3.3.1"
+  },
+  "dependencies": {
+    "@azure/msal-node": "^5.2.3",
+    "@xmcl/core": "^2.15.1",
+    "@xmcl/installer": "^6.1.2",
+    "@xmcl/task": "^4.1.1",
+    "@xmcl/unzip": "^2.1.2",
+    "electron-squirrel-startup": "^1.0.1"
+  },
+  "overrides": {
+    "undici": "7.27.2"
+  }
+}

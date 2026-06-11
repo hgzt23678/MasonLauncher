@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Simple Craft Launcher</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-mark" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <nav class="sidebar-nav" aria-label="メインメニュー">
+          <button class="nav-button active" type="button" aria-label="ホーム">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>
+            </svg>
+          </button>
+          <button class="nav-button" id="profiles-nav" type="button" aria-label="プロファイル">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/>
+              <rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/>
+            </svg>
+          </button>
+          <button class="nav-button" id="open-folder-nav" type="button" aria-label="ゲームフォルダー">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 6h7l2 2h9v10H3z"/>
+            </svg>
+          </button>
+          <button class="nav-button" id="refresh-nav" type="button" aria-label="再スキャン">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M19 7v5h-5M5 17v-5h5M7.2 8.2A6.5 6.5 0 0 1 18 10M16.8 15.8A6.5 6.5 0 0 1 6 14"/>
+            </svg>
+          </button>
+          <button class="nav-button" id="settings-nav" type="button" aria-label="設定">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zM19 12l2-1-2-3-2 .5-1.5-1L15 5h-6l-.5 2.5-1.5 1L5 8l-2 3 2 1v2l-2 1 2 3 2-.5 1.5 1L9 21h6l.5-2.5 1.5-1 2 .5 2-3-2-1z"/>
+            </svg>
+          </button>
+        </nav>
+        <div class="sidebar-status" title="ランチャー稼働中">
+          <span></span>
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="overline">STANDALONE LAUNCHER</p>
+            <h1>Simple Craft Launcher</h1>
+          </div>
+          <div class="topbar-actions">
+            <div class="scan-status" id="scan-status">
+              <span class="status-dot"></span>
+              <span>スキャン中...</span>
+            </div>
+            <button class="account-button" id="account-button" type="button">
+              <span class="account-avatar" id="account-avatar">?</span>
+              <span id="account-label">Microsoftでログイン</span>
+            </button>
+          </div>
+        </header>
+
+        <section class="hero-card">
+          <div class="sky-grid" aria-hidden="true"></div>
+          <div class="sun" aria-hidden="true"></div>
+          <div class="block-hills hill-back" aria-hidden="true"></div>
+          <div class="block-hills hill-front" aria-hidden="true"></div>
+          <div class="hero-copy">
+            <p class="edition-label">JAVA EDITION</p>
+            <h2>冒険を、<br />ここから。</h2>
+            <p class="hero-description">
+              正規アカウントで認証し、ゲームとJavaを準備して直接起動します。
+            </p>
+          </div>
+          <div class="launch-panel">
+            <div class="active-profile-heading">
+              <span>選択中プロファイル</span>
+              <strong id="active-profile-name">メインプロファイル</strong>
+            </div>
+            <label for="version-select">Minecraft バージョン</label>
+            <div class="select-wrap">
+              <select id="version-select" disabled>
+                <option>読み込み中...</option>
+              </select>
+            </div>
+            <button class="play-button" id="play-button" type="button" disabled>
+              <span class="play-icon"></span>
+              <span>
+                <strong>PLAY</strong>
+                <small>このランチャーから起動</small>
+              </span>
+            </button>
+            <div class="download-progress" id="download-progress" hidden>
+              <div class="progress-track">
+                <span id="progress-bar"></span>
+              </div>
+              <div class="progress-copy">
+                <span id="progress-label">準備中...</span>
+                <strong id="progress-percent">0%</strong>
+              </div>
+            </div>
+            <p class="launch-note">
+              ゲームデータとJavaはMojangの公式配信サーバーから取得します。
+            </p>
+          </div>
+        </section>
+
+        <section class="profiles-section" id="profiles-section">
+          <div class="section-heading">
+            <div>
+              <p class="card-kicker">LAUNCH PROFILES</p>
+              <h3>プロファイル</h3>
+            </div>
+            <button class="secondary-button" id="add-profile-button" type="button">
+              ＋ 新規プロファイル
+            </button>
+          </div>
+          <div class="profile-grid" id="profile-grid"></div>
+        </section>
+
+        <section class="dashboard">
+          <article class="info-card installation-card">
+            <div class="card-heading">
+              <div>
+                <p class="card-kicker">INSTALLATION</p>
+                <h3>ゲーム環境</h3>
+              </div>
+              <span class="pill" id="directory-pill">確認中</span>
+            </div>
+            <p class="path-label">ゲームディレクトリ</p>
+            <p class="directory-path" id="directory-path">読み込み中...</p>
+            <div class="card-actions">
+              <button class="secondary-button" id="open-folder-button" type="button">
+                フォルダーを開く
+              </button>
+              <button class="text-button" id="change-folder-button" type="button">
+                変更
+              </button>
+            </div>
+          </article>
+
+          <article class="info-card stats-card">
+            <div class="card-heading">
+              <div>
+                <p class="card-kicker">LOCAL DATA</p>
+                <h3>ワールドと追加要素</h3>
+              </div>
+              <span class="pill" id="runtime-pill">Java 自動管理</span>
+            </div>
+            <div class="stat-grid">
+              <div>
+                <span id="world-count">--</span>
+                <small>ワールド</small>
+              </div>
+              <div>
+                <span id="mod-count">--</span>
+                <small>MOD</small>
+              </div>
+              <div>
+                <span id="screenshot-count">--</span>
+                <small>スクリーンショット</small>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <footer>
+          <p>Minecraftの公式製品ではありません。Microsoft/Mojangの正規認証を使用します。</p>
+          <button id="footer-settings-button" type="button">アカウントと設定</button>
+        </footer>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="settings-modal" hidden>
+      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+        <header class="modal-header">
+          <div>
+            <p class="card-kicker">ACCOUNT & SETTINGS</p>
+            <h2 id="settings-title">アカウントと設定</h2>
+          </div>
+          <button class="modal-close" id="modal-close" type="button" aria-label="閉じる">×</button>
+        </header>
+
+        <div class="account-summary">
+          <span class="profile-avatar" id="profile-avatar">?</span>
+          <div>
+            <strong id="profile-name">未ログイン</strong>
+            <small id="profile-status">Microsoftアカウントを接続してください</small>
+          </div>
+          <button class="text-button" id="logout-button" type="button" hidden>ログアウト</button>
+        </div>
+
+        <div class="auth-method">
+          <span class="auth-method-icon">MS</span>
+          <div>
+            <strong>Microsoft デバイスコード認証</strong>
+            <small>
+              PrismLauncherと同じ方式でブラウザを開き、表示されたコードでログインします。
+            </small>
+          </div>
+          <span class="auth-method-badge">BUILT-IN</span>
+        </div>
+
+        <p class="settings-caption">新規プロファイルの既定メモリ</p>
+        <div class="settings-section memory-settings">
+          <div>
+            <label for="min-memory-input">最小メモリ (MB)</label>
+            <input id="min-memory-input" type="number" min="512" step="256" />
+          </div>
+          <div>
+            <label for="max-memory-input">最大メモリ (MB)</label>
+            <input id="max-memory-input" type="number" min="1024" step="256" />
+          </div>
+        </div>
+        <button class="secondary-button save-memory-button" id="save-settings-button" type="button">
+          設定を保存
+        </button>
+
+        <div class="device-code-panel" id="device-code-panel" hidden>
+          <p>ブラウザでMicrosoftにログインし、次のコードを入力してください。</p>
+          <strong id="device-code">--------</strong>
+          <small id="device-code-url">https://microsoft.com/devicelogin</small>
+          <span class="device-code-expiry" id="device-code-expiry"></span>
+          <div class="device-code-actions">
+            <button class="device-code-copy" id="device-code-copy" type="button" hidden>
+              コードをコピー
+            </button>
+            <button class="device-code-copy" id="device-code-open" type="button" hidden>
+              認証ページを開く
+            </button>
+            <button class="device-code-cancel" id="device-code-cancel" type="button" hidden>
+              キャンセル
+            </button>
+          </div>
+        </div>
+
+        <section class="developer-log-section">
+          <div class="developer-log-heading">
+            <div>
+              <strong>開発者ログ</strong>
+              <small>認証・Java・ファイル検証・spawn・ゲーム出力</small>
+            </div>
+            <div>
+              <button class="text-button" id="refresh-logs-button" type="button">更新</button>
+              <button class="text-button" id="clear-logs-button" type="button">クリア</button>
+            </div>
+          </div>
+          <div class="developer-log-list" id="developer-log-list" aria-live="polite"></div>
+        </section>
+
+        <button class="microsoft-button" id="login-button" type="button">
+          Microsoftアカウントでログイン
+        </button>
+      </section>
+    </div>
+
+    <div class="modal-backdrop" id="profile-modal" hidden>
+      <section class="settings-modal profile-editor" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
+        <header class="modal-header">
+          <div>
+            <p class="card-kicker">LAUNCH PROFILE</p>
+            <h2 id="profile-modal-title">プロファイルを作成</h2>
+          </div>
+          <button class="modal-close" id="profile-modal-close" type="button" aria-label="閉じる">×</button>
+        </header>
+
+        <input id="profile-id-input" type="hidden" />
+        <div class="settings-section">
+          <label for="profile-name-input">プロファイル名</label>
+          <input id="profile-name-input" type="text" maxlength="40" placeholder="例: バニラ最新" />
+        </div>
+        <div class="settings-section">
+          <label for="profile-version-select">Minecraft バージョン</label>
+          <div class="select-wrap">
+            <select id="profile-version-select"></select>
+          </div>
+        </div>
+        <div class="settings-section">
+          <label for="profile-loader-select">MODローダー</label>
+          <div class="select-wrap">
+            <select id="profile-loader-select">
+              <option value="vanilla">Vanilla</option>
+              <option value="forge">Forge（推奨版を自動導入）</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-section memory-settings">
+          <div>
+            <label for="profile-min-memory-input">最小メモリ (MB)</label>
+            <input id="profile-min-memory-input" type="number" min="512" step="256" />
+          </div>
+          <div>
+            <label for="profile-max-memory-input">最大メモリ (MB)</label>
+            <input id="profile-max-memory-input" type="number" min="1024" step="256" />
+          </div>
+        </div>
+        <div class="profile-mods-section" id="profile-mods-section">
+          <div class="profile-mods-heading">
+            <div>
+              <strong>Modrinth MOD</strong>
+              <small>選択したMinecraft版とForgeに対応するMODだけを表示します。</small>
+            </div>
+            <span id="profile-mod-count">0 MOD</span>
+          </div>
+          <div class="mod-search-row">
+            <input id="mod-search-input" type="search" placeholder="MODを検索..." />
+            <button class="secondary-button" id="mod-search-button" type="button">検索</button>
+          </div>
+          <div class="selected-mod-list" id="selected-mod-list"></div>
+          <div class="mod-search-results" id="mod-search-results"></div>
+        </div>
+        <div class="profile-editor-actions">
+          <button class="danger-button" id="delete-profile-button" type="button">削除</button>
+          <div>
+            <button class="text-button" id="cancel-profile-button" type="button">キャンセル</button>
+            <button class="secondary-button" id="save-profile-button" type="button">保存</button>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/renderer.ts"></script>
+  </body>
+</html>
