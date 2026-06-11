@@ -29,6 +29,38 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('profile:delete', profileId),
   searchModrinth: (profileId: string, query: string) =>
     ipcRenderer.invoke('modrinth:search', profileId, query),
+  modrinthSearchMods: (
+    profileId: string,
+    query: string,
+    options?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke('modrinth:search-mods', profileId, query, options ?? {}),
+  modrinthGetProject: (idOrSlug: string) =>
+    ipcRenderer.invoke('modrinth:get-project', idOrSlug),
+  modrinthGetVersions: (
+    profileId: string,
+    idOrSlug: string,
+    options?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke(
+      'modrinth:get-versions',
+      profileId,
+      idOrSlug,
+      options ?? {},
+    ),
+  modrinthDownloadVersion: (profileId: string, versionId: string) =>
+    ipcRenderer.invoke('modrinth:download-version', profileId, versionId),
+  modrinthListInstalledMods: (profileId: string) =>
+    ipcRenderer.invoke('modrinth:list-installed-mods', profileId),
+  modrinthRemoveInstalledMod: (
+    profileId: string,
+    projectIdOrFileName: string,
+  ) =>
+    ipcRenderer.invoke(
+      'modrinth:remove-installed-mod',
+      profileId,
+      projectIdOrFileName,
+    ),
   addMod: (profileId: string, project: Record<string, unknown>) =>
     ipcRenderer.invoke('profile:add-mod', profileId, project),
   removeMod: (profileId: string, projectId: string) =>
@@ -54,4 +86,6 @@ contextBridge.exposeInMainWorld('launcher', {
   onAuthFlowState: (callback: EventCallback) =>
     subscribe('auth:flow-state', callback),
   onLog: (callback: EventCallback) => subscribe('launcher:log', callback),
+  onModrinthDownloadProgress: (callback: EventCallback) =>
+    subscribe('modrinth:download-progress', callback),
 });

@@ -47,15 +47,17 @@
 
       <main class="content">
         <header class="topbar">
-          <div>
+          <div class="topbar-brand">
             <p class="overline">STANDALONE LAUNCHER</p>
             <h1>Simple Craft Launcher</h1>
           </div>
-          <div class="topbar-actions">
+          <div class="topbar-status">
             <div class="scan-status" id="scan-status">
               <span class="status-dot"></span>
               <span>スキャン中...</span>
             </div>
+          </div>
+          <div class="topbar-actions">
             <button class="account-button" id="account-button" type="button">
               <span class="account-avatar" id="account-avatar">?</span>
               <span id="account-label">Microsoftでログイン</span>
@@ -63,117 +65,37 @@
           </div>
         </header>
 
-        <section class="hero-card">
-          <div class="sky-grid" aria-hidden="true"></div>
-          <div class="sun" aria-hidden="true"></div>
-          <div class="block-hills hill-back" aria-hidden="true"></div>
-          <div class="block-hills hill-front" aria-hidden="true"></div>
-          <div class="hero-copy">
-            <p class="edition-label">JAVA EDITION</p>
-            <h2>冒険を、<br />ここから。</h2>
-            <p class="hero-description">
-              正規アカウントで認証し、ゲームとJavaを準備して直接起動します。
-            </p>
-          </div>
-          <div class="launch-panel">
-            <div class="active-profile-heading">
-              <span>選択中プロファイル</span>
-              <strong id="active-profile-name">メインプロファイル</strong>
-            </div>
-            <label for="version-select">Minecraft バージョン</label>
-            <div class="select-wrap">
-              <select id="version-select" disabled>
-                <option>読み込み中...</option>
-              </select>
-            </div>
-            <button class="play-button" id="play-button" type="button" disabled>
-              <span class="play-icon"></span>
-              <span>
-                <strong>PLAY</strong>
-                <small>このランチャーから起動</small>
-              </span>
-            </button>
-            <div class="download-progress" id="download-progress" hidden>
-              <div class="progress-track">
-                <span id="progress-bar"></span>
-              </div>
-              <div class="progress-copy">
-                <span id="progress-label">準備中...</span>
-                <strong id="progress-percent">0%</strong>
-              </div>
-            </div>
-            <p class="launch-note">
-              ゲームデータとJavaはMojangの公式配信サーバーから取得します。
-            </p>
-          </div>
-        </section>
-
-        <section class="profiles-section" id="profiles-section">
-          <div class="section-heading">
+        <section class="profiles-main" id="profiles-section">
+          <div class="profiles-header">
             <div>
               <p class="card-kicker">LAUNCH PROFILES</p>
-              <h3>プロファイル</h3>
+              <h2 class="profiles-title">
+                プロファイル
+                <span class="profile-count-badge" id="profile-count-badge"></span>
+              </h2>
             </div>
-            <button class="secondary-button" id="add-profile-button" type="button">
-              ＋ 新規プロファイル
-            </button>
+            <md-filled-button id="add-profile-button" type="button">
+              新規プロファイル
+            </md-filled-button>
           </div>
           <div class="profile-grid" id="profile-grid"></div>
         </section>
 
-        <section class="dashboard">
-          <article class="info-card installation-card">
-            <div class="card-heading">
-              <div>
-                <p class="card-kicker">INSTALLATION</p>
-                <h3>ゲーム環境</h3>
-              </div>
-              <span class="pill" id="directory-pill">確認中</span>
-            </div>
-            <p class="path-label">ゲームディレクトリ</p>
-            <p class="directory-path" id="directory-path">読み込み中...</p>
-            <div class="card-actions">
-              <button class="secondary-button" id="open-folder-button" type="button">
-                フォルダーを開く
-              </button>
-              <button class="text-button" id="change-folder-button" type="button">
-                変更
-              </button>
-            </div>
-          </article>
-
-          <article class="info-card stats-card">
-            <div class="card-heading">
-              <div>
-                <p class="card-kicker">LOCAL DATA</p>
-                <h3>ワールドと追加要素</h3>
-              </div>
-              <span class="pill" id="runtime-pill">Java 自動管理</span>
-            </div>
-            <div class="stat-grid">
-              <div>
-                <span id="world-count">--</span>
-                <small>ワールド</small>
-              </div>
-              <div>
-                <span id="mod-count">--</span>
-                <small>MOD</small>
-              </div>
-              <div>
-                <span id="screenshot-count">--</span>
-                <small>スクリーンショット</small>
-              </div>
-            </div>
-          </article>
-        </section>
-
-        <footer>
-          <p>Minecraftの公式製品ではありません。Microsoft/Mojangの正規認証を使用します。</p>
-          <button id="footer-settings-button" type="button">アカウントと設定</button>
-        </footer>
+        <div class="launch-status-bar" id="launch-status-bar" hidden>
+          <div class="status-bar-info">
+            <span class="status-bar-profile" id="status-profile-name"></span>
+            <span class="status-bar-stage" id="status-stage"></span>
+          </div>
+          <md-linear-progress id="status-progress" value="0"></md-linear-progress>
+          <div class="status-bar-detail">
+            <span class="status-message" id="status-message">準備中...</span>
+            <span class="status-percent" id="status-percent">0%</span>
+          </div>
+        </div>
       </main>
     </div>
 
+    <!-- Account & Settings modal -->
     <div class="modal-backdrop" id="settings-modal" hidden>
       <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
         <header class="modal-header">
@@ -181,7 +103,11 @@
             <p class="card-kicker">ACCOUNT & SETTINGS</p>
             <h2 id="settings-title">アカウントと設定</h2>
           </div>
-          <button class="modal-close" id="modal-close" type="button" aria-label="閉じる">×</button>
+          <md-icon-button id="modal-close" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </md-icon-button>
         </header>
 
         <div class="account-summary">
@@ -190,7 +116,7 @@
             <strong id="profile-name">未ログイン</strong>
             <small id="profile-status">Microsoftアカウントを接続してください</small>
           </div>
-          <button class="text-button" id="logout-button" type="button" hidden>ログアウト</button>
+          <md-text-button id="logout-button" hidden>ログアウト</md-text-button>
         </div>
 
         <div class="auth-method">
@@ -204,20 +130,42 @@
           <span class="auth-method-badge">BUILT-IN</span>
         </div>
 
-        <p class="settings-caption">新規プロファイルの既定メモリ</p>
-        <div class="settings-section memory-settings">
-          <div>
-            <label for="min-memory-input">最小メモリ (MB)</label>
-            <input id="min-memory-input" type="number" min="512" step="256" />
-          </div>
-          <div>
-            <label for="max-memory-input">最大メモリ (MB)</label>
-            <input id="max-memory-input" type="number" min="1024" step="256" />
+        <p class="settings-caption">ゲームディレクトリ</p>
+        <div class="settings-section dir-section">
+          <p class="directory-path" id="directory-path">読み込み中...</p>
+          <div class="dir-action-row">
+            <md-outlined-button id="open-folder-button" type="button">フォルダーを開く</md-outlined-button>
+            <md-text-button id="change-folder-button" type="button">変更</md-text-button>
           </div>
         </div>
-        <button class="secondary-button save-memory-button" id="save-settings-button" type="button">
+
+        <p class="settings-caption">ゲーム統計</p>
+        <div class="stat-row">
+          <span><strong id="world-count">--</strong> ワールド</span>
+          <span><strong id="mod-count">--</strong> MOD</span>
+          <span><strong id="screenshot-count">--</strong> スクリーンショット</span>
+        </div>
+
+        <p class="settings-caption">新規プロファイルの既定メモリ</p>
+        <div class="memory-settings">
+          <md-filled-text-field
+            id="min-memory-input"
+            type="number"
+            label="最小メモリ (MB)"
+            min="512"
+            step="256"
+          ></md-filled-text-field>
+          <md-filled-text-field
+            id="max-memory-input"
+            type="number"
+            label="最大メモリ (MB)"
+            min="1024"
+            step="256"
+          ></md-filled-text-field>
+        </div>
+        <md-filled-button id="save-settings-button" type="button" class="save-memory-button">
           設定を保存
-        </button>
+        </md-filled-button>
 
         <div class="device-code-panel" id="device-code-panel" hidden>
           <p>ブラウザでMicrosoftにログインし、次のコードを入力してください。</p>
@@ -225,15 +173,9 @@
           <small id="device-code-url">https://microsoft.com/devicelogin</small>
           <span class="device-code-expiry" id="device-code-expiry"></span>
           <div class="device-code-actions">
-            <button class="device-code-copy" id="device-code-copy" type="button" hidden>
-              コードをコピー
-            </button>
-            <button class="device-code-copy" id="device-code-open" type="button" hidden>
-              認証ページを開く
-            </button>
-            <button class="device-code-cancel" id="device-code-cancel" type="button" hidden>
-              キャンセル
-            </button>
+            <md-outlined-button id="device-code-copy" type="button" hidden>コードをコピー</md-outlined-button>
+            <md-outlined-button id="device-code-open" type="button" hidden>認証ページを開く</md-outlined-button>
+            <md-text-button id="device-code-cancel" type="button" hidden class="cancel-btn">キャンセル</md-text-button>
           </div>
         </div>
 
@@ -244,19 +186,20 @@
               <small>認証・Java・ファイル検証・spawn・ゲーム出力</small>
             </div>
             <div>
-              <button class="text-button" id="refresh-logs-button" type="button">更新</button>
-              <button class="text-button" id="clear-logs-button" type="button">クリア</button>
+              <md-text-button id="refresh-logs-button" type="button">更新</md-text-button>
+              <md-text-button id="clear-logs-button" type="button">クリア</md-text-button>
             </div>
           </div>
           <div class="developer-log-list" id="developer-log-list" aria-live="polite"></div>
         </section>
 
-        <button class="microsoft-button" id="login-button" type="button">
+        <md-filled-button id="login-button" type="button" class="microsoft-button">
           Microsoftアカウントでログイン
-        </button>
+        </md-filled-button>
       </section>
     </div>
 
+    <!-- Profile editor modal -->
     <div class="modal-backdrop" id="profile-modal" hidden>
       <section class="settings-modal profile-editor" role="dialog" aria-modal="true" aria-labelledby="profile-modal-title">
         <header class="modal-header">
@@ -264,57 +207,65 @@
             <p class="card-kicker">LAUNCH PROFILE</p>
             <h2 id="profile-modal-title">プロファイルを作成</h2>
           </div>
-          <button class="modal-close" id="profile-modal-close" type="button" aria-label="閉じる">×</button>
+          <md-icon-button id="profile-modal-close" aria-label="閉じる">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
+            </svg>
+          </md-icon-button>
         </header>
 
         <input id="profile-id-input" type="hidden" />
+
         <div class="settings-section">
-          <label for="profile-name-input">プロファイル名</label>
-          <input id="profile-name-input" type="text" maxlength="40" placeholder="例: バニラ最新" />
+          <md-filled-text-field
+            id="profile-name-input"
+            label="プロファイル名"
+            maxlength="40"
+            placeholder="例: バニラ最新"
+          ></md-filled-text-field>
         </div>
+
         <div class="settings-section">
-          <div class="profile-type-tabs" role="tablist" aria-label="プロファイル種類">
-            <button type="button" data-profile-tab="vanilla" class="active">Vanilla</button>
-            <button type="button" data-profile-tab="forge">Forge</button>
-            <button type="button" data-profile-tab="modrinth">Modrinth</button>
-          </div>
-          <div id="profile-vanilla-panel">
-            <label for="profile-version-select">Minecraft バージョン</label>
-            <div class="select-wrap">
-              <select id="profile-version-select"></select>
-            </div>
-          </div>
-        </div>
-        <div class="settings-section">
-          <label for="profile-loader-select">MODローダー</label>
-          <div class="select-wrap">
-            <select id="profile-loader-select">
-              <option value="vanilla">Vanilla</option>
-              <option value="forge">Forge（推奨版を自動導入）</option>
-            </select>
+          <md-tabs id="profile-type-tabs">
+            <md-primary-tab data-profile-tab="vanilla">Vanilla</md-primary-tab>
+            <md-primary-tab data-profile-tab="forge">Forge</md-primary-tab>
+            <md-primary-tab data-profile-tab="modrinth">Modrinth</md-primary-tab>
+          </md-tabs>
+
+          <!-- Hidden native select kept for JS value tracking -->
+          <select id="profile-loader-select" style="display:none">
+            <option value="vanilla">Vanilla</option>
+            <option value="forge">Forge</option>
+          </select>
+
+          <div id="profile-vanilla-panel" class="tab-panel">
+            <md-filled-select id="profile-version-select" label="Minecraft バージョン"></md-filled-select>
           </div>
         </div>
-        <div class="settings-section forge-version-panel" id="profile-forge-panel" hidden>
-          <label for="profile-forge-minecraft-select">Minecraft バージョン</label>
-          <div class="select-wrap">
-            <select id="profile-forge-minecraft-select"></select>
-          </div>
-          <label for="profile-forge-version-select">Forge build</label>
-          <div class="select-wrap">
-            <select id="profile-forge-version-select"></select>
-          </div>
-          <p id="profile-forge-build-status">Forge buildを選択してください。</p>
+
+        <div class="settings-section forge-version-panel tab-panel" id="profile-forge-panel" hidden>
+          <md-filled-select id="profile-forge-minecraft-select" label="Minecraft バージョン"></md-filled-select>
+          <md-filled-select id="profile-forge-version-select" label="Forge build" disabled></md-filled-select>
+          <p id="profile-forge-build-status" class="forge-status-text">Forge buildを選択してください。</p>
         </div>
+
         <div class="settings-section memory-settings">
-          <div>
-            <label for="profile-min-memory-input">最小メモリ (MB)</label>
-            <input id="profile-min-memory-input" type="number" min="512" step="256" />
-          </div>
-          <div>
-            <label for="profile-max-memory-input">最大メモリ (MB)</label>
-            <input id="profile-max-memory-input" type="number" min="1024" step="256" />
-          </div>
+          <md-filled-text-field
+            id="profile-min-memory-input"
+            type="number"
+            label="最小メモリ (MB)"
+            min="512"
+            step="256"
+          ></md-filled-text-field>
+          <md-filled-text-field
+            id="profile-max-memory-input"
+            type="number"
+            label="最大メモリ (MB)"
+            min="1024"
+            step="256"
+          ></md-filled-text-field>
         </div>
+
         <div class="profile-mods-section" id="profile-mods-section">
           <div class="profile-mods-heading">
             <div>
@@ -324,17 +275,22 @@
             <span id="profile-mod-count">0 MOD</span>
           </div>
           <div class="mod-search-row">
-            <input id="mod-search-input" type="search" placeholder="MODを検索..." />
-            <button class="secondary-button" id="mod-search-button" type="button">検索</button>
+            <md-outlined-text-field
+              id="mod-search-input"
+              placeholder="MODを検索..."
+              style="flex:1"
+            ></md-outlined-text-field>
+            <md-outlined-button id="mod-search-button" type="button">検索</md-outlined-button>
           </div>
           <div class="selected-mod-list" id="selected-mod-list"></div>
           <div class="mod-search-results" id="mod-search-results"></div>
         </div>
+
         <div class="profile-editor-actions">
-          <button class="danger-button" id="delete-profile-button" type="button">削除</button>
-          <div>
-            <button class="text-button" id="cancel-profile-button" type="button">キャンセル</button>
-            <button class="secondary-button" id="save-profile-button" type="button">保存</button>
+          <md-text-button id="delete-profile-button" type="button" class="danger-text-btn">削除</md-text-button>
+          <div class="editor-save-row">
+            <md-text-button id="cancel-profile-button" type="button">キャンセル</md-text-button>
+            <md-filled-button id="save-profile-button" type="button">保存</md-filled-button>
           </div>
         </div>
       </section>

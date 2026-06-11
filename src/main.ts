@@ -13,6 +13,7 @@ import { resolveLibraryPath } from './launcher-utils';
 import { MinecraftService } from './minecraft-service';
 import {
   ModrinthService,
+  type ModrinthLoader,
   type ModrinthProject,
   type ProfileMod,
 } from './modrinth-service';
@@ -239,6 +240,38 @@ const pathExists = async (target: string) => {
   } catch {
     return false;
   }
+};
+
+// Forge profiles run as isolated instances; vanilla profiles share the main
+// game directory. Mods and installed-mods.json live under the resolved path.
+const resolveInstanceDirectory = (
+  gameDirectory: string,
+  profile: LaunchProfile,
+) =>
+  profile.loader === 'forge'
+    ? path.join(gameDirectory, 'simple-craft', 'profiles', profile.id)
+    : gameDirectory;
+
+// Maps a profile loader onto a Modrinth loader facet. Vanilla profiles have no
+// mod loader, so they cannot host Modrinth mods.
+const profileModrinthLoader = (
+  profile: LaunchProfile,
+): ModrinthLoader | null => (profile.loader === 'forge' ? 'forge' : null);
+
+const findProfileOrThrow = (
+  settings: LauncherSettings,
+  profileId: unknown,
+): LaunchProfile => {
+  if (typeof profileId !== 'string') {
+    throw new Error('プロファイル指定が不正です。');
+  }
+  const profile = settings.profiles.find(
+    (candidate) => candidate.id === profileId,
+  );
+  if (!profile) {
+    throw new Error('プロファイルが見つかりません。');
+  }
+  return profile;
 };
 
 const countEntries = async (
@@ -849,6 +882,129 @@ const registerIpcHandlers = () => {
       );
       await writeSettings(settings);
       return getLauncherState();
+    },
+  );
+
+  ipcMain.handle(
+    'modrinth:search-mods',
+    async (_event, profileId: unknown, query: unknown, input: unknown) => {
+      if (typeof query !== 'string') {
+        throw new Error('検索キーワードの指定が不正です。');
+      }
+      const settings = await readSettings();
+      const profile = findProfileOrThrow(settings, profileId);
+      const options = (input ?? {}) as {
+        loader?: ModrinthLoader;
+        gameVersion?: string;
+        limit?: number;
+        offset?: number;
+      };
+      return modrinthService.searchMods(query, {
+        loader: options.loader ?? profileModrinthLoader(profile) ?? undefined,
+        gameVersion:
+          typeof options.gameVersion === 'string'
+            ? options.gameVersion
+            : profile.minecraftVersion,
+        limit: options.limit,
+        offset: options.offset,
+      });
+    },
+  );
+
+  ipcMain.handle('modrinth:get-project', async (_event, idOrSlug: unknown) => {
+    if (typeof idOrSlug !== 'string') {
+      throw new Error('プロジェクト指定が不正です。');
+    }
+    return modrinthService.getProject(idOrSlug);
+  });
+
+  ipcMain.handle(
+    'modrinth:get-versions',
+    async (_event, profileId: unknown, idOrSlug: unknown, input: unknown) => {
+      if (typeof idOrSlug !== 'string') {
+        throw new Error('プロジェクト指定が不正です。');
+      }
+      const settings = await readSettings();
+      const profile = findProfileOrThrow(settings, profileId);
+      const options = (input ?? {}) as {
+        loader?: ModrinthLoader;
+        gameVersion?: string;
+      };
+      const loader = options.loader ?? profileModrinthLoader(profile);
+      const gameVersion =
+        typeof options.gameVersion === 'string'
+          ? options.gameVersion
+          : profile.minecraftVersion;
+      return modrinthService.getProjectVersions(idOrSlug, {
+        loaders: loader ? [loader] : undefined,
+        gameVersions: gameVersion ? [gameVersion] : undefined,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'modrinth:download-version',
+    async (event, profileId: unknown, versionId: unknown) => {
+      if (typeof versionId !== 'string') {
+        throw new Error('バージョン指定が不正です。');
+      }
+      if (launchWorkflowInProgress || minecraftService.isRunning()) {
+        throw new Error('Minecraft の起動処理中はMODをダウンロードできません。');
+      }
+      const settings = await readSettings();
+      const profile = findProfileOrThrow(settings, profileId);
+      const loader = profileModrinthLoader(profile);
+      if (!loader) {
+        throw new Error(
+          'このプロファイルにはMODローダーがありません（Forgeプロファイルを選択してください）。',
+        );
+      }
+      const version = await modrinthService.getVersionInfo(versionId);
+      const instanceDirectory = resolveInstanceDirectory(
+        settings.gameDirectory,
+        profile,
+      );
+      return modrinthService.downloadVersion(
+        {
+          instanceDirectory,
+          version,
+          loader,
+          minecraftVersion: profile.minecraftVersion,
+        },
+        event.sender,
+      );
+    },
+  );
+
+  ipcMain.handle(
+    'modrinth:list-installed-mods',
+    async (_event, profileId: unknown) => {
+      const settings = await readSettings();
+      const profile = findProfileOrThrow(settings, profileId);
+      const instanceDirectory = resolveInstanceDirectory(
+        settings.gameDirectory,
+        profile,
+      );
+      return modrinthService.listInstalledMods(instanceDirectory);
+    },
+  );
+
+  ipcMain.handle(
+    'modrinth:remove-installed-mod',
+    async (_event, profileId: unknown, projectIdOrFileName: unknown) => {
+      if (typeof projectIdOrFileName !== 'string') {
+        throw new Error('MOD指定が不正です。');
+      }
+      const settings = await readSettings();
+      const profile = findProfileOrThrow(settings, profileId);
+      const instanceDirectory = resolveInstanceDirectory(
+        settings.gameDirectory,
+        profile,
+      );
+      return modrinthService.removeInstalledMod(
+        instanceDirectory,
+        projectIdOrFileName,
+      );
     },
   );
 

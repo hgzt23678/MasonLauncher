@@ -41,6 +41,7 @@
   },
   "dependencies": {
     "@azure/msal-node": "^5.2.3",
+    "@material/web": "^2.4.1",
     "@xmcl/core": "^2.15.1",
     "@xmcl/installer": "^6.1.2",
     "@xmcl/task": "^4.1.1",

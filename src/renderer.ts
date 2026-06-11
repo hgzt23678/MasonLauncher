@@ -1,4 +1,23 @@
 import './index.css';
+import '@material/web/button/filled-button.js';
+import '@material/web/button/outlined-button.js';
+import '@material/web/button/text-button.js';
+import '@material/web/iconbutton/icon-button.js';
+import '@material/web/progress/linear-progress.js';
+import '@material/web/textfield/filled-text-field.js';
+import '@material/web/textfield/outlined-text-field.js';
+import '@material/web/select/filled-select.js';
+import '@material/web/select/select-option.js';
+import '@material/web/tabs/tabs.js';
+import '@material/web/tabs/primary-tab.js';
+
+// Minimal interface for accessing md-* Web Component properties not on HTMLElement
+interface MdEl extends HTMLElement {
+  value: string | number;
+  disabled: boolean;
+  active: boolean;
+  activeTabIndex: number;
+}
 
 type MinecraftVersion = {
   id: string;
@@ -385,93 +404,81 @@ const api = window.launcher ?? {
 const byId = <T extends HTMLElement>(id: string) =>
   document.querySelector<T>(`#${id}`);
 
-const versionSelect = byId<HTMLSelectElement>('version-select');
-const playButton = byId<HTMLButtonElement>('play-button');
+// Main area
 const scanStatus = byId<HTMLElement>('scan-status');
-const directoryPath = byId<HTMLElement>('directory-path');
-const directoryPill = byId<HTMLElement>('directory-pill');
-const worldCount = byId<HTMLElement>('world-count');
-const modCount = byId<HTMLElement>('mod-count');
-const screenshotCount = byId<HTMLElement>('screenshot-count');
 const toast = byId<HTMLElement>('toast');
-const openFolderButton = byId<HTMLButtonElement>('open-folder-button');
 const openFolderNav = byId<HTMLButtonElement>('open-folder-nav');
-const changeFolderButton = byId<HTMLButtonElement>('change-folder-button');
 const refreshNav = byId<HTMLButtonElement>('refresh-nav');
 const settingsNav = byId<HTMLButtonElement>('settings-nav');
 const profilesNav = byId<HTMLButtonElement>('profiles-nav');
-const footerSettingsButton =
-  byId<HTMLButtonElement>('footer-settings-button');
 const accountButton = byId<HTMLButtonElement>('account-button');
 const accountAvatar = byId<HTMLElement>('account-avatar');
 const accountLabel = byId<HTMLElement>('account-label');
-const downloadProgress = byId<HTMLElement>('download-progress');
-const progressBar = byId<HTMLElement>('progress-bar');
-const progressLabel = byId<HTMLElement>('progress-label');
-const progressPercent = byId<HTMLElement>('progress-percent');
-const activeProfileName = byId<HTMLElement>('active-profile-name');
 const profileGrid = byId<HTMLElement>('profile-grid');
 const profilesSection = byId<HTMLElement>('profiles-section');
-const addProfileButton = byId<HTMLButtonElement>('add-profile-button');
+const addProfileButton = byId<HTMLElement>('add-profile-button');
+const profileCountBadge = byId<HTMLElement>('profile-count-badge');
 
+// Status bar (replaces hero-area progress)
+const statusBar = byId<HTMLElement>('launch-status-bar');
+const statusProfileName = byId<HTMLElement>('status-profile-name');
+const statusStage = byId<HTMLElement>('status-stage');
+const statusProgress = byId<HTMLElement>('status-progress');
+const statusMessage = byId<HTMLElement>('status-message');
+const statusPercent = byId<HTMLElement>('status-percent');
+
+// Settings modal
 const settingsModal = byId<HTMLElement>('settings-modal');
-const modalClose = byId<HTMLButtonElement>('modal-close');
+const modalClose = byId<HTMLElement>('modal-close');
 const profileAvatar = byId<HTMLElement>('profile-avatar');
 const profileName = byId<HTMLElement>('profile-name');
 const profileStatus = byId<HTMLElement>('profile-status');
-const logoutButton = byId<HTMLButtonElement>('logout-button');
-const minMemoryInput = byId<HTMLInputElement>('min-memory-input');
-const maxMemoryInput = byId<HTMLInputElement>('max-memory-input');
-const saveSettingsButton =
-  byId<HTMLButtonElement>('save-settings-button');
-const loginButton = byId<HTMLButtonElement>('login-button');
+const logoutButton = byId<HTMLElement>('logout-button');
+const minMemoryInput = byId<HTMLElement>('min-memory-input');
+const maxMemoryInput = byId<HTMLElement>('max-memory-input');
+const saveSettingsButton = byId<HTMLElement>('save-settings-button');
+const loginButton = byId<HTMLElement>('login-button');
 const deviceCodePanel = byId<HTMLElement>('device-code-panel');
 const deviceCode = byId<HTMLElement>('device-code');
 const deviceCodeUrl = byId<HTMLElement>('device-code-url');
-const deviceCodeCopy = byId<HTMLButtonElement>('device-code-copy');
-const deviceCodeOpen = byId<HTMLButtonElement>('device-code-open');
-const deviceCodeCancel = byId<HTMLButtonElement>('device-code-cancel');
+const deviceCodeCopy = byId<HTMLElement>('device-code-copy');
+const deviceCodeOpen = byId<HTMLElement>('device-code-open');
+const deviceCodeCancel = byId<HTMLElement>('device-code-cancel');
 const deviceCodeExpiry = byId<HTMLElement>('device-code-expiry');
 const developerLogList = byId<HTMLElement>('developer-log-list');
-const refreshLogsButton =
-  byId<HTMLButtonElement>('refresh-logs-button');
-const clearLogsButton = byId<HTMLButtonElement>('clear-logs-button');
+const refreshLogsButton = byId<HTMLElement>('refresh-logs-button');
+const clearLogsButton = byId<HTMLElement>('clear-logs-button');
+const openFolderButton = byId<HTMLElement>('open-folder-button');
+const changeFolderButton = byId<HTMLElement>('change-folder-button');
+const directoryPath = byId<HTMLElement>('directory-path');
+const worldCount = byId<HTMLElement>('world-count');
+const modCount = byId<HTMLElement>('mod-count');
+const screenshotCount = byId<HTMLElement>('screenshot-count');
 
+// Profile editor modal
 const profileModal = byId<HTMLElement>('profile-modal');
 const profileModalTitle = byId<HTMLElement>('profile-modal-title');
-const profileModalClose = byId<HTMLButtonElement>('profile-modal-close');
+const profileModalClose = byId<HTMLElement>('profile-modal-close');
 const profileIdInput = byId<HTMLInputElement>('profile-id-input');
-const profileNameInput = byId<HTMLInputElement>('profile-name-input');
-const profileVersionSelect =
-  byId<HTMLSelectElement>('profile-version-select');
-const profileLoaderSelect =
-  byId<HTMLSelectElement>('profile-loader-select');
-const profileTabButtons = [
-  ...document.querySelectorAll<HTMLButtonElement>('[data-profile-tab]'),
-];
+const profileNameInput = byId<HTMLElement>('profile-name-input');
+const profileVersionSelect = byId<HTMLElement>('profile-version-select');
+const profileLoaderSelect = byId<HTMLSelectElement>('profile-loader-select');
 const profileVanillaPanel = byId<HTMLElement>('profile-vanilla-panel');
 const profileForgePanel = byId<HTMLElement>('profile-forge-panel');
-const profileForgeMinecraftSelect =
-  byId<HTMLSelectElement>('profile-forge-minecraft-select');
-const profileForgeVersionSelect =
-  byId<HTMLSelectElement>('profile-forge-version-select');
-const profileForgeBuildStatus =
-  byId<HTMLElement>('profile-forge-build-status');
-const profileMinMemoryInput =
-  byId<HTMLInputElement>('profile-min-memory-input');
-const profileMaxMemoryInput =
-  byId<HTMLInputElement>('profile-max-memory-input');
+const profileForgeMinecraftSelect = byId<HTMLElement>('profile-forge-minecraft-select');
+const profileForgeVersionSelect = byId<HTMLElement>('profile-forge-version-select');
+const profileForgeBuildStatus = byId<HTMLElement>('profile-forge-build-status');
+const profileMinMemoryInput = byId<HTMLElement>('profile-min-memory-input');
+const profileMaxMemoryInput = byId<HTMLElement>('profile-max-memory-input');
 const profileModsSection = byId<HTMLElement>('profile-mods-section');
 const profileModCount = byId<HTMLElement>('profile-mod-count');
 const selectedModList = byId<HTMLElement>('selected-mod-list');
-const modSearchInput = byId<HTMLInputElement>('mod-search-input');
-const modSearchButton = byId<HTMLButtonElement>('mod-search-button');
+const modSearchInput = byId<HTMLElement>('mod-search-input');
+const modSearchButton = byId<HTMLElement>('mod-search-button');
 const modSearchResults = byId<HTMLElement>('mod-search-results');
-const deleteProfileButton =
-  byId<HTMLButtonElement>('delete-profile-button');
-const cancelProfileButton =
-  byId<HTMLButtonElement>('cancel-profile-button');
-const saveProfileButton = byId<HTMLButtonElement>('save-profile-button');
+const deleteProfileButton = byId<HTMLElement>('delete-profile-button');
+const cancelProfileButton = byId<HTMLElement>('cancel-profile-button');
+const saveProfileButton = byId<HTMLElement>('save-profile-button');
 
 let currentState: LauncherState | undefined;
 let busy = false;
@@ -479,7 +486,6 @@ let toastTimer: number | undefined;
 let deviceCodeTimer: number | undefined;
 let developerLogs: LauncherLogEntry[] = [];
 let forgeBuilds: ForgeBuild[] = [];
-let activeProfileTab: 'vanilla' | 'forge' | 'modrinth' = 'vanilla';
 
 const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
   developerLogs = entries.slice(-500);
@@ -576,13 +582,6 @@ const selectedProfile = () =>
     (profile) => profile.id === currentState?.selectedProfileId,
   );
 
-const selectedVersion = () => {
-  const profile = selectedProfile();
-  return currentState?.availableVersions.find(
-    (version) => version.id === profile?.minecraftVersion,
-  );
-};
-
 const renderAuth = (auth: AuthState) => {
   const name = auth.profile?.name ?? '未ログイン';
   const initial = name.slice(0, 1) || '?';
@@ -612,7 +611,7 @@ const renderAuth = (auth: AuthState) => {
   }
   if (loginButton) {
     loginButton.hidden = auth.signedIn;
-    loginButton.disabled = !auth.configured;
+    (loginButton as MdEl).disabled = !auth.configured;
     loginButton.textContent = auth.configured
       ? 'Microsoftアカウントでログイン'
       : 'Microsoft認証が未設定です';
@@ -620,56 +619,114 @@ const renderAuth = (auth: AuthState) => {
 };
 
 const createProfileCard = (profile: LaunchProfile) => {
-  const card = document.createElement('article');
-  card.className = 'profile-card';
-  card.classList.toggle(
-    'active',
-    profile.id === currentState?.selectedProfileId,
+  const isActive = profile.id === currentState?.selectedProfileId;
+  const isForge = profile.loaderType === 'forge';
+  const versionInfo = currentState?.availableVersions.find(
+    (v) => v.id === profile.minecraftVersion,
   );
+  const isInstalled = versionInfo?.installed ?? false;
+  const isRunning = currentState?.gameRunning ?? false;
+  const canAuth =
+    (currentState?.auth.signedIn || currentState?.auth.offline.allowed) ?? false;
+
+  const card = document.createElement('article');
+  card.className = `profile-card${isActive ? ' active' : ''}`;
   card.dataset.profileId = profile.id;
 
-  const top = document.createElement('div');
-  top.className = 'profile-card-top';
-  const icon = document.createElement('span');
-  icon.className = `profile-card-icon ${profile.loader}`;
-  icon.textContent = profile.loader === 'forge' ? 'F' : 'V';
+  // ── Art area ──
+  const art = document.createElement('div');
+  art.className = `profile-card-art ${isForge ? 'forge' : 'vanilla'}`;
+  art.setAttribute('aria-hidden', 'true');
+  const artGrid = document.createElement('div');
+  artGrid.className = 'profile-art-grid';
+  const artIcon = document.createElement('div');
+  artIcon.className = 'profile-art-icon';
+  artIcon.textContent = isForge ? 'F' : 'V';
+  art.append(artGrid, artIcon);
+
+  // ── Body ──
+  const body = document.createElement('div');
+  body.className = 'profile-card-body';
+
   const badges = document.createElement('div');
   badges.className = 'profile-badges';
-  const loader = document.createElement('span');
-  loader.textContent = profile.loader.toUpperCase();
-  badges.append(loader);
+  const loaderBadge = document.createElement('span');
+  loaderBadge.className = `badge badge-loader${isForge ? ' forge' : ''}`;
+  loaderBadge.textContent = isForge ? 'FORGE' : 'VANILLA';
+  badges.append(loaderBadge);
   if (profile.mods.length > 0) {
-    const mods = document.createElement('span');
-    mods.textContent = `${profile.mods.length} MOD`;
-    badges.append(mods);
+    const modBadge = document.createElement('span');
+    modBadge.className = 'badge badge-mods';
+    modBadge.textContent = `${profile.mods.length} MOD`;
+    badges.append(modBadge);
   }
-  top.append(icon, badges);
 
-  const title = document.createElement('h4');
-  title.textContent = profile.name;
+  const name = document.createElement('h3');
+  name.className = 'profile-card-name';
+  name.textContent = profile.name;
+
   const version = document.createElement('p');
+  version.className = 'profile-card-version';
   version.textContent =
-    profile.loaderType === 'forge'
+    isForge
       ? `Minecraft ${profile.minecraftVersion} / Forge ${profile.loaderVersion ?? '未選択'}`
       : `Minecraft ${profile.minecraftVersion}`;
-  const memory = document.createElement('small');
-  memory.textContent = `${profile.minMemory}–${profile.maxMemory} MB`;
 
+  const memory = document.createElement('p');
+  memory.className = 'profile-card-memory';
+  memory.textContent = `RAM: ${profile.minMemory}–${profile.maxMemory} MB`;
+
+  const installStatus = document.createElement('div');
+  installStatus.className = 'profile-install-status';
+  const installDot = document.createElement('span');
+  installDot.className = `install-dot${isInstalled ? ' installed' : ''}`;
+  const installLabel = document.createElement('span');
+  installLabel.textContent = isInstalled ? 'インストール済み' : '未インストール';
+  installStatus.append(installDot, installLabel);
+
+  body.append(badges, name, version, memory, installStatus);
+
+  // ── Actions ──
   const actions = document.createElement('div');
   actions.className = 'profile-card-actions';
-  const selectButton = document.createElement('button');
-  selectButton.type = 'button';
-  selectButton.className = 'profile-select-button';
-  selectButton.dataset.action = 'select';
-  selectButton.textContent =
-    profile.id === currentState?.selectedProfileId ? '選択中' : '選択';
-  const editButton = document.createElement('button');
-  editButton.type = 'button';
-  editButton.className = 'profile-edit-button';
-  editButton.dataset.action = 'edit';
-  editButton.textContent = '編集';
-  actions.append(selectButton, editButton);
-  card.append(top, title, version, memory, actions);
+
+  const playBtn = document.createElement('md-filled-button') as HTMLElement;
+  playBtn.dataset.action = 'launch';
+  playBtn.setAttribute('type', 'button');
+
+  let playLabel: string;
+  let playDisabled = false;
+
+  if (isRunning) {
+    playLabel = 'RUNNING';
+    playDisabled = true;
+  } else if (!canAuth) {
+    playLabel = 'LOGIN';
+  } else if (!isInstalled) {
+    playLabel = currentState?.mojangAvailable ? 'DOWNLOAD' : 'OFFLINE';
+    playDisabled = !currentState?.mojangAvailable;
+  } else {
+    playLabel = '▶ PLAY';
+  }
+
+  playBtn.textContent = playLabel;
+  if (playDisabled) playBtn.setAttribute('disabled', '');
+
+  const editBtn = document.createElement('md-icon-button') as HTMLElement;
+  editBtn.dataset.action = 'edit';
+  editBtn.setAttribute('type', 'button');
+  editBtn.setAttribute('aria-label', '編集');
+  const editSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  editSvg.setAttribute('viewBox', '0 0 24 24');
+  editSvg.setAttribute('width', '20');
+  editSvg.setAttribute('height', '20');
+  editSvg.setAttribute('fill', 'currentColor');
+  editSvg.innerHTML =
+    '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>';
+  editBtn.append(editSvg);
+
+  actions.append(playBtn, editBtn);
+  card.append(art, body, actions);
   return card;
 };
 
@@ -680,45 +737,13 @@ const renderProfileGrid = () => {
   );
 };
 
-const updateLaunchButton = () => {
-  if (!playButton || busy || !currentState) return;
-  const profile = selectedProfile();
-  const version = selectedVersion();
-  const title = playButton.querySelector('strong');
-  const sublabel = playButton.querySelector('small');
-
-  if (!profile || !version) {
-    playButton.disabled = true;
-    return;
-  }
-  if (
-    !currentState.auth.signedIn &&
-    !currentState.auth.offline.allowed
-  ) {
-    playButton.disabled = false;
-    if (title) title.textContent = 'LOGIN';
-    if (sublabel) sublabel.textContent = '正規アカウントを接続';
-    return;
-  }
-  if (!version.installed) {
-    playButton.disabled = !currentState.mojangAvailable;
-    if (title) title.textContent = 'DOWNLOAD';
-    if (sublabel) sublabel.textContent = 'ゲームとJavaを準備';
-    return;
-  }
-  playButton.disabled = currentState.gameRunning;
-  if (title) title.textContent = currentState.gameRunning ? 'RUNNING' : 'PLAY';
-  if (sublabel) {
-    sublabel.textContent = currentState.gameRunning
-      ? 'Minecraft は起動中です'
-      : profile.loader === 'forge'
-        ? `Forge / ${profile.mods.length} MOD`
-        : 'Vanillaを直接起動';
-  }
+const updateProfileCards = () => {
+  if (!profileGrid || !currentState) return;
+  renderProfileGrid();
 };
 
 const populateVersionSelect = (
-  select: HTMLSelectElement | null,
+  select: HTMLElement | null,
   value: string,
 ) => {
   if (!select || !currentState) return;
@@ -727,35 +752,29 @@ const populateVersionSelect = (
     compareVersionsByRelease,
   )) {
     const suffix = version.installed ? '  /  INSTALLED' : '';
-    select.add(
-      new Option(`${formatVersionLabel(version)}${suffix}`, version.id),
-    );
+    const option = document.createElement('md-select-option');
+    option.setAttribute('value', version.id);
+    option.textContent = `${formatVersionLabel(version)}${suffix}`;
+    select.append(option);
   }
-  select.disabled = currentState.availableVersions.length === 0;
+  (select as MdEl).disabled = currentState.availableVersions.length === 0;
   if (currentState.availableVersions.some((version) => version.id === value)) {
-    select.value = value;
+    (select as MdEl).value = value;
   }
 };
 
 const renderState = (state: LauncherState) => {
   currentState = state;
-  const profile = selectedProfile();
-  populateVersionSelect(versionSelect, profile?.minecraftVersion ?? '');
-  if (versionSelect) versionSelect.disabled = profile?.loaderType === 'forge';
-  if (activeProfileName) {
-    activeProfileName.textContent = profile?.name ?? 'プロファイル未選択';
-  }
   if (directoryPath) {
     directoryPath.textContent = state.gameDirectory;
     directoryPath.title = state.gameDirectory;
   }
-  if (directoryPill) {
-    directoryPill.textContent = state.directoryExists ? '検出済み' : '新規';
-    directoryPill.classList.toggle('warning', !state.directoryExists);
-  }
   if (worldCount) worldCount.textContent = String(state.worlds);
   if (modCount) modCount.textContent = String(state.mods);
   if (screenshotCount) screenshotCount.textContent = String(state.screenshots);
+  if (profileCountBadge) {
+    profileCountBadge.textContent = `${state.profiles.length}`;
+  }
   if (scanStatus) {
     const label = scanStatus.querySelector('span:last-child');
     if (label) {
@@ -766,14 +785,13 @@ const renderState = (state: LauncherState) => {
     scanStatus.classList.toggle('warning', !state.mojangAvailable);
   }
   if (minMemoryInput) {
-    minMemoryInput.value = String(state.settings.minMemory);
+    (minMemoryInput as MdEl).value = String(state.settings.minMemory);
   }
   if (maxMemoryInput) {
-    maxMemoryInput.value = String(state.settings.maxMemory);
+    (maxMemoryInput as MdEl).value = String(state.settings.maxMemory);
   }
   renderProfileGrid();
   renderAuth(state.auth);
-  updateLaunchButton();
 };
 
 const refreshState = async () => {
@@ -795,8 +813,8 @@ const refreshState = async () => {
 const updateProfileSaveAvailability = () => {
   if (!saveProfileButton) return;
   const forgeSelected = profileLoaderSelect?.value === 'forge';
-  saveProfileButton.disabled =
-    forgeSelected && !profileForgeVersionSelect?.value;
+  const forgeVersionVal = (profileForgeVersionSelect as MdEl)?.value as string | undefined;
+  (saveProfileButton as MdEl).disabled = forgeSelected && !forgeVersionVal;
 };
 
 const populateForgeMinecraftSelect = (value: string) => {
@@ -805,16 +823,17 @@ const populateForgeMinecraftSelect = (value: string) => {
   for (const version of [...currentState.availableVersions]
     .filter((candidate) => candidate.type === 'release')
     .sort(compareVersionsByRelease)) {
-    profileForgeMinecraftSelect.add(
-      new Option(`Minecraft ${version.id}`, version.id),
-    );
+    const option = document.createElement('md-select-option');
+    option.setAttribute('value', version.id);
+    option.textContent = `Minecraft ${version.id}`;
+    profileForgeMinecraftSelect.append(option);
   }
   if (
     currentState.availableVersions.some(
       (version) => version.id === value && version.type === 'release',
     )
   ) {
-    profileForgeMinecraftSelect.value = value;
+    (profileForgeMinecraftSelect as MdEl).value = value;
   }
 };
 
@@ -823,36 +842,34 @@ const loadForgeBuilds = async (
   selectedLoaderVersion = '',
 ) => {
   if (!profileForgeVersionSelect || !profileForgeBuildStatus) return;
-  profileForgeVersionSelect.disabled = true;
+  (profileForgeVersionSelect as MdEl).disabled = true;
   profileForgeVersionSelect.replaceChildren();
   profileForgeBuildStatus.textContent = 'Forge build一覧を取得しています...';
   updateProfileSaveAvailability();
   try {
     forgeBuilds = await api.getForgeBuilds(minecraftVersion);
-    profileForgeVersionSelect.add(
-      new Option('Forge buildを選択してください', ''),
-    );
+    const placeholder = document.createElement('md-select-option');
+    placeholder.setAttribute('value', '');
+    placeholder.textContent = 'Forge buildを選択してください';
+    profileForgeVersionSelect.append(placeholder);
     for (const build of forgeBuilds) {
-      profileForgeVersionSelect.add(
-        new Option(
-          `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`,
-          build.loaderVersion,
-        ),
-      );
+      const option = document.createElement('md-select-option');
+      option.setAttribute('value', build.loaderVersion);
+      option.textContent = `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`;
+      profileForgeVersionSelect.append(option);
     }
     if (
       selectedLoaderVersion &&
-      forgeBuilds.some(
-        (build) => build.loaderVersion === selectedLoaderVersion,
-      )
+      forgeBuilds.some((build) => build.loaderVersion === selectedLoaderVersion)
     ) {
-      profileForgeVersionSelect.value = selectedLoaderVersion;
+      (profileForgeVersionSelect as MdEl).value = selectedLoaderVersion;
     }
-    profileForgeVersionSelect.disabled = forgeBuilds.length === 0;
+    (profileForgeVersionSelect as MdEl).disabled = forgeBuilds.length === 0;
+    const currentVal = (profileForgeVersionSelect as MdEl).value as string;
     profileForgeBuildStatus.textContent =
       forgeBuilds.length > 0
         ? selectedLoaderVersion
-          ? `${forgeBuilds.length} builds / 選択中: Forge ${profileForgeVersionSelect.value}`
+          ? `${forgeBuilds.length} builds / 選択中: Forge ${currentVal}`
           : `${forgeBuilds.length} builds / Forge buildを選択してください。`
         : `Minecraft ${minecraftVersion} に対応するForge buildがありません。`;
   } catch (error) {
@@ -871,17 +888,17 @@ const setProfileTab = (
   tab: 'vanilla' | 'forge' | 'modrinth',
   updateLoader = true,
 ) => {
-  activeProfileTab = tab;
-  for (const button of profileTabButtons) {
-    button.classList.toggle(
-      'active',
-      button.dataset.profileTab === activeProfileTab,
+  // Drive md-tabs active index
+  const tabsEl = document.getElementById('profile-type-tabs');
+  if (tabsEl) {
+    const allTabEls = [...tabsEl.querySelectorAll('[data-profile-tab]')];
+    const idx = allTabEls.findIndex(
+      (t) => (t as HTMLElement).dataset.profileTab === tab,
     );
+    if (idx >= 0) (tabsEl as MdEl).activeTabIndex = idx;
   }
-  const legacyLoaderSection =
-    profileLoaderSelect?.closest<HTMLElement>('.settings-section');
+
   if (profileVanillaPanel) profileVanillaPanel.hidden = tab !== 'vanilla';
-  if (legacyLoaderSection) legacyLoaderSection.hidden = true;
   if (profileForgePanel) profileForgePanel.hidden = tab !== 'forge';
   if (profileModsSection) profileModsSection.hidden = tab !== 'modrinth';
 
@@ -951,7 +968,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
       : 'プロファイルを作成';
   }
   if (profileIdInput) profileIdInput.value = profile?.id ?? '';
-  if (profileNameInput) profileNameInput.value = profile?.name ?? '';
+  if (profileNameInput) (profileNameInput as MdEl).value = profile?.name ?? '';
   populateVersionSelect(
     profileVersionSelect,
     profile?.minecraftVersion ??
@@ -971,24 +988,24 @@ const openProfileEditor = (profile?: LaunchProfile) => {
     profileLoaderSelect.value = profile?.loaderType ?? 'vanilla';
   }
   if (profileMinMemoryInput) {
-    profileMinMemoryInput.value = String(
+    (profileMinMemoryInput as MdEl).value = String(
       profile?.minMemory ?? currentState.settings.minMemory,
     );
   }
   if (profileMaxMemoryInput) {
-    profileMaxMemoryInput.value = String(
+    (profileMaxMemoryInput as MdEl).value = String(
       profile?.maxMemory ?? currentState.settings.maxMemory,
     );
   }
   if (deleteProfileButton) deleteProfileButton.hidden = !profile;
   modSearchResults?.replaceChildren();
-  if (modSearchInput) modSearchInput.value = '';
+  if (modSearchInput) (modSearchInput as MdEl).value = '';
   forgeBuilds = [];
   if (profileForgeVersionSelect) {
     profileForgeVersionSelect.replaceChildren(
       new Option('Forge buildを選択してください', ''),
     );
-    profileForgeVersionSelect.disabled = true;
+    (profileForgeVersionSelect as MdEl).disabled = true;
   }
   if (profileForgeBuildStatus) {
     profileForgeBuildStatus.textContent =
@@ -1014,24 +1031,24 @@ const editorProfile = () =>
 
 const saveProfileEditor = async (close = true) => {
   if (!saveProfileButton) return undefined;
-  saveProfileButton.disabled = true;
+  (saveProfileButton as MdEl).disabled = true;
   try {
     const loader =
       profileLoaderSelect?.value === 'forge' ? 'forge' : 'vanilla';
     const minecraftVersion =
       loader === 'forge'
-        ? profileForgeMinecraftSelect?.value ?? ''
-        : profileVersionSelect?.value ?? '';
+        ? ((profileForgeMinecraftSelect as MdEl)?.value as string) ?? ''
+        : ((profileVersionSelect as MdEl)?.value as string) ?? '';
     const loaderVersion =
       loader === 'forge'
-        ? profileForgeVersionSelect?.value ?? ''
+        ? ((profileForgeVersionSelect as MdEl)?.value as string) ?? ''
         : null;
     if (loader === 'forge' && !loaderVersion) {
       throw new Error('Forge buildを選択してください。');
     }
     const state = await api.saveProfile({
       id: profileIdInput?.value || undefined,
-      name: profileNameInput?.value ?? '',
+      name: ((profileNameInput as MdEl)?.value as string) ?? '',
       profileType: loader,
       loaderType: loader,
       minecraftVersion,
@@ -1042,8 +1059,8 @@ const saveProfileEditor = async (close = true) => {
           : minecraftVersion,
       versionId: minecraftVersion,
       loader,
-      minMemory: Number(profileMinMemoryInput?.value ?? 1024),
-      maxMemory: Number(profileMaxMemoryInput?.value ?? 4096),
+      minMemory: Number((profileMinMemoryInput as MdEl)?.value ?? 1024),
+      maxMemory: Number((profileMaxMemoryInput as MdEl)?.value ?? 4096),
     });
     renderState(state);
     if (profileIdInput) profileIdInput.value = state.selectedProfileId;
@@ -1111,24 +1128,30 @@ const renderModSearchResults = (projects: ModrinthProject[]) => {
   }
 };
 
-playButton?.addEventListener('click', async () => {
-  const profile = selectedProfile();
-  const version = selectedVersion();
-  if (!profile || !version || !currentState) return;
-  if (
-    !currentState.auth.signedIn &&
-    !currentState.auth.offline.allowed
-  ) {
+const handleProfileLaunch = async (profile: LaunchProfile) => {
+  if (!currentState || busy) return;
+  if (!currentState.auth.signedIn && !currentState.auth.offline.allowed) {
     openSettingsModal();
     return;
   }
+  const version = currentState.availableVersions.find(
+    (v) => v.id === profile.minecraftVersion,
+  );
+  statusBar?.removeAttribute('hidden');
+  if (statusProfileName) statusProfileName.textContent = profile.name;
+  if (statusStage) statusStage.textContent = '準備中';
 
+  // Disable this card's launch button while running
+  const card = profileGrid?.querySelector<HTMLElement>(
+    `[data-profile-id="${profile.id}"] [data-action="launch"]`,
+  );
+  if (card) {
+    card.setAttribute('disabled', '');
+    card.textContent = '起動中...';
+  }
   busy = true;
-  playButton.disabled = true;
-  playButton.classList.add('launching');
-  downloadProgress?.removeAttribute('hidden');
   try {
-    if (!version.installed) {
+    if (version && !version.installed) {
       const installResult = await api.installVersion(version.id);
       showToast(installResult.message, !installResult.ok);
     }
@@ -1142,34 +1165,13 @@ playButton?.addEventListener('click', async () => {
     );
   } finally {
     busy = false;
-    playButton.classList.remove('launching');
-    updateLaunchButton();
+    updateProfileCards();
   }
-});
-
-versionSelect?.addEventListener('change', async () => {
-  const profile = selectedProfile();
-  if (!profile || !versionSelect.value) return;
-  try {
-    renderState(
-      await api.saveProfile({
-        ...profile,
-        minecraftVersion: versionSelect.value,
-        resolvedVersionId: versionSelect.value,
-        versionId: versionSelect.value,
-      }),
-    );
-  } catch (error) {
-    showToast(
-      error instanceof Error ? error.message : 'バージョンを変更できませんでした。',
-      true,
-    );
-  }
-});
+};
 
 profileGrid?.addEventListener('click', async (event) => {
-  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-action]',
+  const button = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-action]',
   );
   const card = (event.target as HTMLElement).closest<HTMLElement>(
     '[data-profile-id]',
@@ -1183,13 +1185,9 @@ profileGrid?.addEventListener('click', async (event) => {
     openProfileEditor(profile);
     return;
   }
-  try {
-    renderState(await api.selectProfile(profile.id));
-  } catch (error) {
-    showToast(
-      error instanceof Error ? error.message : '選択を変更できませんでした。',
-      true,
-    );
+  if (button.dataset.action === 'launch') {
+    void handleProfileLaunch(profile);
+    return;
   }
 });
 
@@ -1209,7 +1207,7 @@ saveProfileButton?.addEventListener('click', () => {
 deleteProfileButton?.addEventListener('click', async () => {
   const id = profileIdInput?.value;
   if (!id) return;
-  deleteProfileButton.disabled = true;
+  (deleteProfileButton as MdEl).disabled = true;
   try {
     renderState(await api.deleteProfile(id));
     closeProfileModal();
@@ -1222,7 +1220,7 @@ deleteProfileButton?.addEventListener('click', async () => {
       true,
     );
   } finally {
-    deleteProfileButton.disabled = false;
+    (deleteProfileButton as MdEl).disabled = false;
   }
 });
 
@@ -1230,35 +1228,37 @@ profileLoaderSelect?.addEventListener('change', () => {
   renderSelectedMods(editorProfile());
 });
 
-for (const button of profileTabButtons) {
-  button.addEventListener('click', () => {
-    const tab = button.dataset.profileTab;
-    if (tab !== 'vanilla' && tab !== 'forge' && tab !== 'modrinth') {
-      return;
-    }
-    setProfileTab(tab);
-    if (
-      tab === 'forge' &&
-      profileForgeMinecraftSelect?.value &&
-      forgeBuilds.length === 0
-    ) {
-      void loadForgeBuilds(
-        profileForgeMinecraftSelect.value,
-        editorProfile()?.loaderVersion ?? '',
-      );
-    }
-  });
-}
+document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
+  const tabsEl = document.getElementById('profile-type-tabs');
+  const allTabs = [...(tabsEl?.querySelectorAll('[data-profile-tab]') ?? [])];
+  const active = allTabs.find((t) => (t as MdEl).active);
+  const tab = (active as HTMLElement | undefined)?.dataset.profileTab;
+  if (tab !== 'vanilla' && tab !== 'forge' && tab !== 'modrinth') return;
+  setProfileTab(tab);
+  if (
+    tab === 'forge' &&
+    (profileForgeMinecraftSelect as MdEl)?.value &&
+    forgeBuilds.length === 0
+  ) {
+    void loadForgeBuilds(
+      (profileForgeMinecraftSelect as MdEl).value as string,
+      editorProfile()?.loaderVersion ?? '',
+    );
+  }
+});
 
 profileForgeMinecraftSelect?.addEventListener('change', () => {
-  if (!profileForgeMinecraftSelect.value) return;
-  void loadForgeBuilds(profileForgeMinecraftSelect.value);
+  const val = (profileForgeMinecraftSelect as MdEl).value as string;
+  if (!val) return;
+  void loadForgeBuilds(val);
 });
 
 profileForgeVersionSelect?.addEventListener('change', () => {
+  const forgeVal = (profileForgeVersionSelect as MdEl).value as string;
+  const mcVal = (profileForgeMinecraftSelect as MdEl)?.value as string;
   if (profileForgeBuildStatus) {
-    profileForgeBuildStatus.textContent = profileForgeVersionSelect.value
-      ? `Minecraft ${profileForgeMinecraftSelect?.value} / Forge ${profileForgeVersionSelect.value}`
+    profileForgeBuildStatus.textContent = forgeVal
+      ? `Minecraft ${mcVal} / Forge ${forgeVal}`
       : 'Forge buildを選択してください。';
   }
   updateProfileSaveAvailability();
@@ -1269,14 +1269,14 @@ modSearchButton?.addEventListener('click', async () => {
     showToast('MODを追加するにはForgeを選択してください。', true);
     return;
   }
-  modSearchButton.disabled = true;
+  (modSearchButton as MdEl).disabled = true;
   modSearchButton.textContent = '検索中...';
   try {
     const state = await saveProfileEditor(false);
     if (!state) return;
     const projects = await api.searchModrinth(
       state.selectedProfileId,
-      modSearchInput?.value ?? '',
+      ((modSearchInput as MdEl)?.value as string) ?? '',
     );
     renderModSearchResults(projects);
   } catch (error) {
@@ -1285,13 +1285,13 @@ modSearchButton?.addEventListener('click', async () => {
       true,
     );
   } finally {
-    modSearchButton.disabled = false;
+    (modSearchButton as MdEl).disabled = false;
     modSearchButton.textContent = '検索';
   }
 });
 
 modSearchInput?.addEventListener('keydown', (event) => {
-  if (event.key === 'Enter') modSearchButton?.click();
+  if ((event as KeyboardEvent).key === 'Enter') modSearchButton?.click();
 });
 
 modSearchResults?.addEventListener('click', async (event) => {
@@ -1359,7 +1359,7 @@ changeFolderButton?.addEventListener('click', async () => {
   }
 });
 
-for (const button of [settingsNav, footerSettingsButton, accountButton]) {
+for (const button of [settingsNav, accountButton]) {
   button?.addEventListener('click', openSettingsModal);
 }
 modalClose?.addEventListener('click', closeSettingsModal);
@@ -1369,15 +1369,15 @@ settingsModal?.addEventListener('click', (event) => {
 
 const saveLauncherSettings = async () => {
   const state = await api.saveSettings({
-    minMemory: Number(minMemoryInput?.value ?? 1024),
-    maxMemory: Number(maxMemoryInput?.value ?? 4096),
+    minMemory: Number((minMemoryInput as MdEl)?.value ?? 1024),
+    maxMemory: Number((maxMemoryInput as MdEl)?.value ?? 4096),
   });
   renderState(state);
   return state;
 };
 
 saveSettingsButton?.addEventListener('click', async () => {
-  saveSettingsButton.disabled = true;
+  (saveSettingsButton as MdEl).disabled = true;
   try {
     await saveLauncherSettings();
     showToast('設定を保存しました。');
@@ -1387,7 +1387,7 @@ saveSettingsButton?.addEventListener('click', async () => {
       true,
     );
   } finally {
-    saveSettingsButton.disabled = false;
+    (saveSettingsButton as MdEl).disabled = false;
   }
 });
 
@@ -1472,7 +1472,7 @@ loginButton?.addEventListener('click', async () => {
     showToast('このビルドにはMicrosoft認証設定がありません。', true);
     return;
   }
-  loginButton.disabled = true;
+  (loginButton as MdEl).disabled = true;
   loginButton.textContent = '認証を待っています...';
   renderAuthFlow({
     status: 'requesting-code',
@@ -1525,7 +1525,7 @@ logoutButton?.addEventListener('click', async () => {
     const auth = await api.logout();
     renderAuth(auth);
     if (currentState) currentState.auth = auth;
-    updateLaunchButton();
+    updateProfileCards();
     showToast('ログアウトしました。');
   } catch (error) {
     showToast(
@@ -1620,24 +1620,26 @@ api.onLog((payload) => {
 });
 
 api.onProgress((payload) => {
-  downloadProgress?.removeAttribute('hidden');
+  statusBar?.removeAttribute('hidden');
   const percent = typeof payload.percent === 'number' ? payload.percent : 0;
   const message =
     typeof payload.message === 'string' ? payload.message : '処理中...';
-  const displayMessage = formatCategorizedMessage(
-    message,
-    payload.category,
-  );
+  const displayMessage = formatCategorizedMessage(message, payload.category);
   const file = typeof payload.file === 'string' ? payload.file : '';
-  if (progressBar) progressBar.style.width = `${percent}%`;
-  if (progressPercent) progressPercent.textContent = `${percent}%`;
-  if (progressLabel) {
-    progressLabel.textContent = file
+  const stage = typeof payload.phase === 'string' ? payload.phase : '';
+  if (statusProgress) (statusProgress as MdEl).value = percent / 100;
+  if (statusPercent) statusPercent.textContent = `${percent}%`;
+  if (statusStage) statusStage.textContent = stage;
+  if (statusMessage) {
+    statusMessage.textContent = file
       ? `${displayMessage} / ${file}`
       : displayMessage;
   }
   if (payload.phase === 'error') {
     showToast(displayMessage, true);
+  }
+  if (payload.phase === 'complete') {
+    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
   }
 });
 
@@ -1646,7 +1648,8 @@ api.onProcessState((payload) => {
   const message =
     typeof payload.message === 'string' ? payload.message : '';
   if (currentState) currentState.gameRunning = running;
-  updateLaunchButton();
+  updateProfileCards();
+  if (!running) statusBar?.setAttribute('hidden', '');
   if (message) {
     showToast(
       formatCategorizedMessage(message, payload.category),

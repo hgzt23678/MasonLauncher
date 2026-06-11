@@ -114,6 +114,117 @@ type DeviceCodeInfo = {
   message: string;
 };
 
+type ModrinthSideSupport =
+  | 'required'
+  | 'optional'
+  | 'unsupported'
+  | 'unknown';
+
+type ModrinthLoader = 'forge' | 'fabric' | 'quilt' | 'neoforge';
+
+type ModrinthReleaseChannel = 'release' | 'beta' | 'alpha';
+
+type ModrinthDependencyType =
+  | 'required'
+  | 'optional'
+  | 'incompatible'
+  | 'embedded';
+
+type ModrinthSearchHit = {
+  projectId: string;
+  slug: string;
+  title: string;
+  description: string;
+  iconUrl: string | null;
+  downloads: number;
+  follows: number;
+  categories: string[];
+  clientSide: ModrinthSideSupport;
+  serverSide: ModrinthSideSupport;
+  latestVersion: string | null;
+};
+
+type ModrinthProjectDetail = {
+  projectId: string;
+  slug: string;
+  title: string;
+  description: string;
+  iconUrl: string | null;
+  downloads: number;
+  follows: number;
+  categories: string[];
+  clientSide: ModrinthSideSupport;
+  serverSide: ModrinthSideSupport;
+  loaders: string[];
+  gameVersions: string[];
+};
+
+type ModrinthDependency = {
+  projectId: string | null;
+  versionId: string | null;
+  fileName: string | null;
+  dependencyType: ModrinthDependencyType;
+};
+
+type ModrinthVersionFile = {
+  url: string;
+  filename: string;
+  primary: boolean;
+  size: number;
+  sha1: string | null;
+  sha512: string | null;
+};
+
+type ModrinthVersionInfo = {
+  id: string;
+  projectId: string;
+  name: string;
+  versionNumber: string;
+  versionType: ModrinthReleaseChannel;
+  gameVersions: string[];
+  loaders: string[];
+  datePublished: string | null;
+  files: ModrinthVersionFile[];
+  dependencies: ModrinthDependency[];
+};
+
+type InstalledModRecord = {
+  projectId: string | null;
+  versionId: string;
+  fileName: string;
+  title: string;
+  sha1: string | null;
+  sha512: string | null;
+  loader: string;
+  minecraftVersion: string;
+  dateInstalled: string;
+  source: 'modrinth';
+};
+
+type DownloadVersionResult = {
+  fileName: string;
+  filePath: string;
+  alreadyPresent: boolean;
+  renamed: boolean;
+  record: InstalledModRecord;
+  requiredDependencies: ModrinthDependency[];
+  optionalDependencies: ModrinthDependency[];
+  incompatibleDependencies: ModrinthDependency[];
+  embeddedDependencies: ModrinthDependency[];
+};
+
+type ModrinthSearchOptions = {
+  loader?: ModrinthLoader;
+  gameVersion?: string;
+  limit?: number;
+  offset?: number;
+};
+
+type ModrinthVersionOptions = {
+  loader?: ModrinthLoader;
+  gameVersion?: string;
+};
+
 type LauncherEvent = Record<string, unknown>;
 
 type LauncherLogEntry = {
@@ -173,6 +284,30 @@ declare global {
         profileId: string,
         projectId: string,
       ) => Promise<LauncherState>;
+      modrinthSearchMods: (
+        profileId: string,
+        query: string,
+        options?: ModrinthSearchOptions,
+      ) => Promise<ModrinthSearchHit[]>;
+      modrinthGetProject: (
+        idOrSlug: string,
+      ) => Promise<ModrinthProjectDetail>;
+      modrinthGetVersions: (
+        profileId: string,
+        idOrSlug: string,
+        options?: ModrinthVersionOptions,
+      ) => Promise<ModrinthVersionInfo[]>;
+      modrinthDownloadVersion: (
+        profileId: string,
+        versionId: string,
+      ) => Promise<DownloadVersionResult>;
+      modrinthListInstalledMods: (
+        profileId: string,
+      ) => Promise<InstalledModRecord[]>;
+      modrinthRemoveInstalledMod: (
+        profileId: string,
+        projectIdOrFileName: string,
+      ) => Promise<{ removed: boolean; mods: InstalledModRecord[] }>;
       login: () => Promise<AuthState>;
       getDeviceCode: () => Promise<DeviceCodeInfo | null>;
       getAuthFlowState: () => Promise<AuthFlowState>;
@@ -193,6 +328,9 @@ declare global {
         callback: (payload: LauncherEvent) => void,
       ) => () => void;
       onLog: (callback: (payload: LauncherEvent) => void) => () => void;
+      onModrinthDownloadProgress: (
+        callback: (payload: LauncherEvent) => void,
+      ) => () => void;
     };
   }
 }
