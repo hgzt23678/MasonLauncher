@@ -10,7 +10,7 @@ import type {
 const defaultApiBase = 'https://api.modrinth.com/v2';
 // A unique, contactable User-Agent is required by Modrinth's API guidelines.
 const defaultUserAgent =
-  'hgzt23678/SimpleCraftLauncher/1.4.1 (https://github.com/hgzt23678)';
+  'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
 
 type LogWriter = (
   level: LauncherLogLevel,

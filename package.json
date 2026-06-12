@@ -1,8 +1,8 @@
 {
-  "name": "simple-craft-launcher",
-  "productName": "Simple Craft Launcher",
+  "name": "mason-launcher",
+  "productName": "Mason Launcher",
   "version": "1.4.1",
-  "description": "A standalone Minecraft Java launcher using Microsoft authentication and official Mojang metadata.",
+  "description": "A clean instance launcher for Minecraft using Microsoft authentication and official Mojang metadata.",
   "main": ".vite/build/main.js",
   "private": true,
   "scripts": {
