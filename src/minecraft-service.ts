@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { Version, type ResolvedVersion } from '@xmcl/core';
@@ -78,6 +79,106 @@ type LogWriter = (
   message: string,
   detail?: Record<string, unknown>,
 ) => void;
+
+const delay = (milliseconds: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+export const isJavaRuntimeManifestComplete = async (
+  destination: string,
+  manifest: Pick<JavaRuntimeManifest, 'files'>,
+) => {
+  for (const [relativePath, entry] of Object.entries(manifest.files)) {
+    if (entry.type !== 'file') continue;
+    try {
+      const stat = await fs.stat(path.join(destination, relativePath));
+      if (
+        !stat.isFile() ||
+        stat.size !== entry.downloads.raw.size
+      ) {
+        return false;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return true;
+};
+
+export const waitForJavaRuntimeManifest = async (
+  destination: string,
+  manifest: Pick<JavaRuntimeManifest, 'files'>,
+  timeoutMs = 10 * 60 * 1000,
+) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isJavaRuntimeManifestComplete(destination, manifest)) return;
+    await delay(500);
+  }
+  throw new MinecraftError(
+    'Java runtime download did not complete before the timeout.',
+    'java',
+    'JAVA_RUNTIME_INSTALL_TIMEOUT',
+    { destination, timeoutMs },
+  );
+};
+
+export const repairJavaRuntimeManifestFiles = async (
+  destination: string,
+  manifest: Pick<JavaRuntimeManifest, 'files'>,
+  fetchImpl: typeof fetch = fetch,
+) => {
+  for (const [relativePath, entry] of Object.entries(manifest.files)) {
+    if (entry.type !== 'file') continue;
+    const target = path.join(destination, relativePath);
+    const expected = entry.downloads.raw;
+    try {
+      const stat = await fs.stat(target);
+      if (stat.isFile() && stat.size === expected.size) continue;
+    } catch {
+      // Missing files are downloaded below.
+    }
+
+    const response = await fetchImpl(expected.url);
+    if (!response.ok) {
+      throw new MinecraftError(
+        `Java runtime file download failed: HTTP ${response.status}`,
+        'java',
+        `HTTP_${response.status}`,
+        { relativePath, url: expected.url },
+      );
+    }
+    const data = Buffer.from(await response.arrayBuffer());
+    const actualSha1 = createHash('sha1').update(data).digest('hex');
+    if (
+      data.length !== expected.size ||
+      actualSha1.toLowerCase() !== expected.sha1.toLowerCase()
+    ) {
+      throw new MinecraftError(
+        'Java runtime file verification failed.',
+        'java',
+        'JAVA_RUNTIME_FILE_VERIFICATION_FAILED',
+        {
+          relativePath,
+          expectedSize: expected.size,
+          actualSize: data.length,
+          expectedSha1: expected.sha1,
+          actualSha1,
+        },
+      );
+    }
+    await fs.mkdir(path.dirname(target), { recursive: true });
+    const temporary = `${target}.tmp-${process.pid}-${randomUUID()}`;
+    try {
+      await fs.writeFile(temporary, data);
+      await fs.rm(target, { force: true });
+      await fs.rename(temporary, target);
+    } finally {
+      await fs
+        .rm(temporary, { force: true })
+        .catch((): void => undefined);
+    }
+  }
+};
 
 export class MinecraftService {
   private launchInProgress = false;
@@ -312,7 +413,7 @@ export class MinecraftService {
         destination: runtimeDirectory,
         manifest,
       });
-      await task.startAndWait(
+      const installation = task.startAndWait(
         this.taskContext(
           sender,
           task,
@@ -320,6 +421,28 @@ export class MinecraftService {
           `Java ${majorVersion} をダウンロードしています`,
         ),
       );
+      const repairAfterStall = (async () => {
+        await delay(30_000);
+        if (await isJavaRuntimeManifestComplete(runtimeDirectory, manifest)) {
+          return;
+        }
+        this.log(
+          'warn',
+          'java',
+          'Java runtime download stalled; repairing incomplete files.',
+          { component, majorVersion },
+        );
+        await repairJavaRuntimeManifestFiles(runtimeDirectory, manifest);
+        await waitForJavaRuntimeManifest(
+          runtimeDirectory,
+          manifest,
+          60_000,
+        );
+      })();
+      await Promise.race([
+        installation,
+        repairAfterStall,
+      ]);
       await fs.access(executable);
     } catch (error) {
       throw toMinecraftError(

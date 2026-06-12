@@ -3,6 +3,8 @@ import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
 import test from 'node:test';
 import {
+  assertGameDirArgument,
+  insertExtraJvmArguments,
   MinecraftLaunchResolver,
   parseJavaMajorVersion,
   resolveMicrosoftLaunchPlaceholders,
@@ -73,6 +75,83 @@ test('clientidとauth_xuidプレースホルダを認証セッションから解
     '--unknown',
     '${future_placeholder}',
   ]);
+});
+
+test('追加JVM引数をmainClassの直前へ挿入する', () => {
+  const args = [
+    '-cp',
+    'client.jar',
+    'net.minecraft.client.main.Main',
+    '--username',
+    'Player',
+  ];
+
+  insertExtraJvmArguments(
+    args,
+    'net.minecraft.client.main.Main',
+    ['-XX:+UseG1GC'],
+  );
+
+  assert.deepEqual(args, [
+    '-cp',
+    'client.jar',
+    '-XX:+UseG1GC',
+    'net.minecraft.client.main.Main',
+    '--username',
+    'Player',
+  ]);
+});
+
+test('mainClass未検出時は追加JVM引数を黙って破棄しない', () => {
+  assert.throws(
+    () =>
+      insertExtraJvmArguments(
+        ['-cp', 'client.jar'],
+        'net.minecraft.client.main.Main',
+        ['-XX:+UseG1GC'],
+      ),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.category === 'arguments' &&
+      error.code === 'JVM_ARGS_INSERTION_FAILED',
+  );
+});
+
+test('--gameDirがプロファイルのinstanceDirと一致する', () => {
+  assert.doesNotThrow(() =>
+    assertGameDirArgument(
+      ['--gameDir', 'C:\\Minecraft\\Profiles\\main'],
+      'C:\\Minecraft\\Profiles\\main',
+    ),
+  );
+});
+
+test('--gameDirが欠落している場合は起動を中止する', () => {
+  assert.throws(
+    () =>
+      assertGameDirArgument(
+        ['--username', 'Player'],
+        'C:\\Minecraft\\Profiles\\main',
+      ),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.category === 'arguments' &&
+      error.code === 'GAME_DIR_ARGUMENT_MISSING',
+  );
+});
+
+test('--gameDirがinstanceDirと不一致の場合は起動を中止する', () => {
+  assert.throws(
+    () =>
+      assertGameDirArgument(
+        ['--gameDir', 'C:\\Minecraft\\Profiles\\other'],
+        'C:\\Minecraft\\Profiles\\main',
+      ),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.category === 'arguments' &&
+      error.code === 'GAME_DIR_ARGUMENT_MISMATCH',
+  );
 });
 
 test('認証済みオフラインセッションはローカルJava検証まで進む', async () => {

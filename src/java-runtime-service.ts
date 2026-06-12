@@ -100,7 +100,8 @@ export const defaultJavaVersionRules: readonly JavaVersionRule[] = [
   { until: '1.16.5', major: 8 },
   { from: '1.17', until: '1.17.1', major: 16 },
   { from: '1.18', until: '1.20.4', major: 17 },
-  { from: '1.20.5', major: 21 },
+  { from: '1.20.5', until: '1.21.11', major: 21 },
+  { from: '26.1', major: 25 },
 ];
 
 const parseMinecraftVersion = (value: string): number[] | null => {
@@ -124,10 +125,32 @@ export const compareMinecraftVersions = (left: string, right: string) => {
   return 0;
 };
 
+const snapshotJavaMajor = (minecraftVersion: string) => {
+  const preRelease = minecraftVersion.match(/^1\.18-pre(\d+)$/i);
+  if (preRelease) {
+    return Number.parseInt(preRelease[1], 10) <= 1 ? 16 : 17;
+  }
+
+  const weekly = minecraftVersion.match(
+    /^(\d{2})w(\d{2})([a-z]|potato)$/i,
+  );
+  if (!weekly) return undefined;
+  if (weekly[3].toLowerCase() === 'potato') return 17;
+
+  const weekKey =
+    Number.parseInt(weekly[1], 10) * 100 +
+    Number.parseInt(weekly[2], 10);
+  if (weekKey < 2119) return 8;
+  if (weekKey < 2200) return 16;
+  if (weekKey < 2414) return 17;
+  if (weekKey < 2600) return 21;
+  return 25;
+};
+
 /**
  * Resolves the Java major version required by a Minecraft version. Mojang
  * version JSON metadata takes priority; the rule table covers metadata-less
- * lookups; unparseable versions (snapshots) fall back to the newest rule.
+ * lookups; known snapshot transition points mirror Mojang metadata.
  */
 export const requiredJavaMajor = (
   minecraftVersion: string,
@@ -141,6 +164,8 @@ export const requiredJavaMajor = (
   ) {
     return Math.round(metadataMajorVersion);
   }
+  const snapshotMajor = snapshotJavaMajor(minecraftVersion);
+  if (snapshotMajor !== undefined) return snapshotMajor;
   const fallback = rules.reduce(
     (latest, rule) => Math.max(latest, rule.major),
     8,
@@ -338,6 +363,27 @@ export const detectDistributionFromBanner = (
   if (/java\(tm\)/i.test(banner)) return 'oracle';
   if (/openjdk/i.test(banner)) return 'openjdk';
   return 'unknown';
+};
+
+const normalizeJavaArchitecture = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  if (['amd64', 'x86_64', 'x64'].includes(normalized)) return 'x64';
+  if (['x86', 'i386', 'i486', 'i586', 'i686'].includes(normalized)) {
+    return 'ia32';
+  }
+  if (['aarch64', 'arm64'].includes(normalized)) return 'arm64';
+  return normalized;
+};
+
+export const isJavaArchitectureCompatible = (
+  hostArchitecture: string,
+  javaArchitecture: string | null,
+) => {
+  if (!javaArchitecture) return true;
+  return (
+    normalizeJavaArchitecture(hostArchitecture) ===
+    normalizeJavaArchitecture(javaArchitecture)
+  );
 };
 
 const defaultProbe: JavaProbe = async (executable) => {
@@ -1299,7 +1345,7 @@ export class JavaRuntimeService {
       settings.preferredDistributions.length > 0
         ? settings.preferredDistributions
         : defaultPreferredDistributions;
-    const runtimes = await this.listRuntimes();
+    const runtimes = await this.listRuntimes({ includeMojang: true });
     const sourceRank: Record<JavaRuntimeSource, number> = {
       managed: 0,
       custom: 1,
@@ -1313,7 +1359,9 @@ export class JavaRuntimeService {
     const candidates = runtimes
       .filter(
         (runtime) =>
-          runtime.verified && runtime.majorVersion === requiredMajor,
+          runtime.verified &&
+          runtime.majorVersion === requiredMajor &&
+          isJavaArchitectureCompatible(this.arch, runtime.arch),
       )
       .sort(
         (left, right) =>
@@ -1333,6 +1381,29 @@ export class JavaRuntimeService {
       };
       this.logSelection(selection, input.instanceId, 'auto');
       return selection;
+    }
+
+    // The version JSON names Mojang's matching runtime component. Prefer that
+    // official runtime before trying third-party distributions.
+    if (input.mojangFallback) {
+      try {
+        const javaPath = await input.mojangFallback();
+        const selection: ResolvedJavaSelection = {
+          javaPath,
+          majorVersion: requiredMajor,
+          distribution: 'mojang',
+          runtimeId: null,
+          source: 'mojang-fallback',
+          requiredMajorVersion: requiredMajor,
+        };
+        this.logSelection(selection, input.instanceId, 'auto');
+        return selection;
+      } catch (error) {
+        this.log('warn', 'java', 'Mojang Java runtime is not available yet.', {
+          message: error instanceof Error ? error.message : String(error),
+          requiredMajorVersion: requiredMajor,
+        });
+      }
     }
 
     if (!input.offlineOnly) {

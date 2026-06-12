@@ -11,6 +11,11 @@ import '@material/web/select/select-option.js';
 import '@material/web/switch/switch.js';
 import '@material/web/tabs/tabs.js';
 import '@material/web/tabs/primary-tab.js';
+import {
+  compareVersionsByRelease,
+  filterSelectableVersions,
+  formatVersionLabel,
+} from './renderer-logic';
 
 // Minimal interface for accessing md-* Web Component properties not on HTMLElement
 interface MdEl extends HTMLElement {
@@ -661,33 +666,11 @@ const openSettingsModal = () => {
 const closeSettingsModal = () => settingsModal?.setAttribute('hidden', '');
 const closeProfileModal = () => profileModal?.setAttribute('hidden', '');
 
-const formatVersionLabel = (version: MinecraftVersion) => {
-  if (version.type === 'snapshot') {
-    return `${version.id}  /  SNAPSHOT`;
-  }
-  if (version.type !== 'release') {
-    return `${version.id}  /  CUSTOM`;
-  }
-  return `${version.id}  /  RELEASE`;
-};
-
-const compareVersionsByRelease = (
-  left: MinecraftVersion,
-  right: MinecraftVersion,
-) => {
-  const leftTime = left.releaseTime ? Date.parse(left.releaseTime) : NaN;
-  const rightTime = right.releaseTime ? Date.parse(right.releaseTime) : NaN;
-  if (Number.isFinite(leftTime) && Number.isFinite(rightTime)) {
-    if (leftTime !== rightTime) return rightTime - leftTime;
-  } else if (Number.isFinite(leftTime)) {
-    return -1;
-  } else if (Number.isFinite(rightTime)) {
-    return 1;
-  }
-  return right.id.localeCompare(left.id, undefined, {
-    numeric: true,
-    sensitivity: 'base',
-  });
+const createSelectOption = (label: string, value: string) => {
+  const option = document.createElement('md-select-option');
+  option.setAttribute('value', value);
+  option.textContent = label;
+  return option;
 };
 
 const selectedProfile = () =>
@@ -885,22 +868,21 @@ const populateVersionSelect = (
 ) => {
   if (!select || !currentState) return;
   select.replaceChildren();
-  // Snapshots are hidden by default; old_beta/old_alpha are never shown.
-  const eligible = currentState.availableVersions.filter((v) => {
-    if (v.type === 'old_beta' || v.type === 'old_alpha') return false;
-    if (v.type === 'snapshot') return showSnapshots;
-    return true;
-  });
+  const eligible = filterSelectableVersions(
+    currentState.availableVersions,
+    showSnapshots,
+    value,
+  );
   for (const version of [...eligible].sort(compareVersionsByRelease)) {
     const suffix = version.installed ? '  /  INSTALLED' : '';
-    const option = document.createElement('md-select-option');
-    option.setAttribute('value', version.id);
-    option.textContent = `${formatVersionLabel(version)}${suffix}`;
+    const option = createSelectOption(
+      `${formatVersionLabel(version)}${suffix}`,
+      version.id,
+    );
     select.append(option);
   }
   (select as MdEl).disabled = eligible.length === 0;
-  // Keep previously selected value even if it's a snapshot that's now hidden.
-  if (currentState.availableVersions.some((v) => v.id === value)) {
+  if (eligible.some((version) => version.id === value)) {
     (select as MdEl).value = value;
   }
 };
@@ -965,9 +947,7 @@ const populateForgeMinecraftSelect = (value: string) => {
   for (const version of [...currentState.availableVersions]
     .filter((candidate) => candidate.type === 'release')
     .sort(compareVersionsByRelease)) {
-    const option = document.createElement('md-select-option');
-    option.setAttribute('value', version.id);
-    option.textContent = `Minecraft ${version.id}`;
+    const option = createSelectOption(`Minecraft ${version.id}`, version.id);
     profileForgeMinecraftSelect.append(option);
   }
   if (
@@ -990,14 +970,16 @@ const loadForgeBuilds = async (
   updateProfileSaveAvailability();
   try {
     forgeBuilds = await api.getForgeBuilds(minecraftVersion);
-    const placeholder = document.createElement('md-select-option');
-    placeholder.setAttribute('value', '');
-    placeholder.textContent = 'Forge buildを選択してください';
+    const placeholder = createSelectOption(
+      'Forge buildを選択してください',
+      '',
+    );
     profileForgeVersionSelect.append(placeholder);
     for (const build of forgeBuilds) {
-      const option = document.createElement('md-select-option');
-      option.setAttribute('value', build.loaderVersion);
-      option.textContent = `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`;
+      const option = createSelectOption(
+        `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`,
+        build.loaderVersion,
+      );
       profileForgeVersionSelect.append(option);
     }
     if (
@@ -1347,7 +1329,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   forgeBuilds = [];
   if (profileForgeVersionSelect) {
     profileForgeVersionSelect.replaceChildren(
-      new Option('Forge buildを選択してください', ''),
+      createSelectOption('Forge buildを選択してください', ''),
     );
     (profileForgeVersionSelect as MdEl).disabled = true;
   }

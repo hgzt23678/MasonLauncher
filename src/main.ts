@@ -15,7 +15,10 @@ import {
   type JavaDistributionId,
   type ProfileJavaSettings,
 } from './java-runtime-service';
-import { resolveLibraryPath } from './launcher-utils';
+import {
+  normalizeLaunchProfileVersion,
+  resolveLibraryPath,
+} from './launcher-utils';
 import { MinecraftService } from './minecraft-service';
 import {
   ModrinthService,
@@ -686,33 +689,27 @@ const getLauncherState = async () => {
     '';
   let settingsChanged = false;
   for (const profile of settings.profiles) {
+    const profileWithFallback =
+      !profile.versionId && fallbackVersion
+        ? { ...profile, versionId: fallbackVersion }
+        : profile;
     const installedProfileVersion = installedVersions.find(
-      (version) => version.id === profile.versionId,
+      (version) => version.id === profileWithFallback.versionId,
     );
-    if (
-      installedProfileVersion?.inheritsFrom &&
-      /(?:^|[-_.])forge(?:[-_.]|$)/i.test(installedProfileVersion.id)
-    ) {
-      profile.versionId = installedProfileVersion.inheritsFrom;
-      profile.loader = 'forge';
-      profile.loaderVersion =
-        installedProfileVersion.id.match(/-forge-(.+)$/i)?.[1] ?? null;
-      settingsChanged = true;
-    }
-    if (!profile.versionId && fallbackVersion) {
-      profile.versionId = fallbackVersion;
-      settingsChanged = true;
-    }
-    const loaderType = profile.loader === 'forge' ? 'forge' : 'vanilla';
-    profile.profileType = loaderType;
-    profile.loaderType = loaderType;
-    profile.minecraftVersion = profile.versionId;
-    profile.loaderVersion =
-      loaderType === 'forge' ? profile.loaderVersion : null;
-    profile.resolvedVersionId =
-      loaderType === 'forge' && profile.loaderVersion
-        ? `${profile.versionId}-forge-${profile.loaderVersion}`
-        : profile.versionId;
+    const normalized = normalizeLaunchProfileVersion(
+      profileWithFallback,
+      installedProfileVersion,
+    );
+    const changed =
+      profile.versionId !== normalized.versionId ||
+      profile.minecraftVersion !== normalized.minecraftVersion ||
+      profile.resolvedVersionId !== normalized.resolvedVersionId ||
+      profile.loader !== normalized.loader ||
+      profile.loaderType !== normalized.loaderType ||
+      profile.profileType !== normalized.profileType ||
+      profile.loaderVersion !== normalized.loaderVersion;
+    Object.assign(profile, normalized);
+    settingsChanged ||= changed;
   }
   if (settingsChanged) {
     await writeSettings(settings);
@@ -1329,18 +1326,20 @@ const registerIpcHandlers = () => {
       const selectedInstalledVersion = installedVersions.find(
         (version) => version.id === profile.versionId,
       );
+      const normalizedProfile = normalizeLaunchProfileVersion(
+        profile,
+        selectedInstalledVersion,
+      );
       if (
-        selectedInstalledVersion?.inheritsFrom &&
-        /(?:^|[-_.])forge(?:[-_.]|$)/i.test(selectedInstalledVersion.id)
+        profile.versionId !== normalizedProfile.versionId ||
+        profile.minecraftVersion !== normalizedProfile.minecraftVersion ||
+        profile.resolvedVersionId !== normalizedProfile.resolvedVersionId ||
+        profile.loader !== normalizedProfile.loader ||
+        profile.loaderType !== normalizedProfile.loaderType ||
+        profile.profileType !== normalizedProfile.profileType ||
+        profile.loaderVersion !== normalizedProfile.loaderVersion
       ) {
-        profile.versionId = selectedInstalledVersion.inheritsFrom;
-        profile.loader = 'forge';
-        profile.profileType = 'forge';
-        profile.loaderType = 'forge';
-        profile.minecraftVersion = selectedInstalledVersion.inheritsFrom;
-        profile.loaderVersion =
-          selectedInstalledVersion.id.match(/-forge-(.+)$/i)?.[1] ?? null;
-        profile.resolvedVersionId = selectedInstalledVersion.id;
+        Object.assign(profile, normalizedProfile);
         await writeSettings(settings);
       }
       const session = await requireMinecraftSession(event.sender);
