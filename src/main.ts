@@ -9,6 +9,12 @@ import { resolveMicrosoftClientId } from './auth-config';
 import { classifyAuthFailure } from './auth-errors';
 import { AuthService } from './auth-service';
 import { LauncherDiagnostics } from './diagnostics';
+import {
+  JavaRuntimeService,
+  normalizeJavaSettings,
+  type JavaDistributionId,
+  type ProfileJavaSettings,
+} from './java-runtime-service';
 import { resolveLibraryPath } from './launcher-utils';
 import { MinecraftService } from './minecraft-service';
 import {
@@ -41,10 +47,14 @@ type LaunchProfile = {
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
+  java: ProfileJavaSettings;
+  // Per-profile game directory. Saves, mods, config etc. are isolated here.
+  instanceDir: string;
 };
 
 let authService: AuthService;
 let minecraftService: MinecraftService;
+let javaRuntimeService: JavaRuntimeService;
 let launchWorkflowInProgress = false;
 const diagnostics = new LauncherDiagnostics((entry) => {
   for (const window of BrowserWindow.getAllWindows()) {
@@ -76,6 +86,9 @@ const defaultGameDirectory = () => {
 const settingsFile = () =>
   path.join(app.getPath('userData'), 'launcher-settings.json');
 
+const defaultInstanceDir = (profileId: string) =>
+  path.join(defaultGameDirectory(), 'simple-craft', 'profiles', profileId);
+
 const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
   minMemory: 1024,
@@ -95,6 +108,8 @@ const defaultSettings = (): LauncherSettings => ({
       minMemory: 1024,
       maxMemory: 4096,
       mods: [],
+      java: normalizeJavaSettings(undefined),
+      instanceDir: defaultInstanceDir('default-profile'),
     },
   ],
   selectedProfileId: 'default-profile',
@@ -150,6 +165,17 @@ const readSettings = async (): Promise<LauncherSettings> => {
               loaderType === 'forge' && loaderVersion
                 ? `${minecraftVersion}-forge-${loaderVersion}`
                 : minecraftVersion;
+            // Profiles saved before instanceDir was added get the path that
+            // the launcher already uses at runtime, so saves are not lost.
+            const baseDir =
+              typeof value.gameDirectory === 'string' && value.gameDirectory.trim()
+                ? value.gameDirectory.trim()
+                : defaultGameDirectory();
+            const instanceDir =
+              typeof (profile as { instanceDir?: unknown }).instanceDir === 'string' &&
+              ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
+                ? ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
+                : path.join(baseDir, 'simple-craft', 'profiles', profile.id);
             return {
               id: profile.id,
               name: profile.name.trim() || 'プロファイル',
@@ -178,6 +204,13 @@ const readSettings = async (): Promise<LauncherSettings> => {
                       ),
                   )
                 : [],
+              // Profiles saved before the Java runtime feature migrate to
+              // auto; a legacy plain javaPath is preserved as customPath.
+              java: normalizeJavaSettings(
+                profile.java,
+                (profile as { javaPath?: unknown }).javaPath,
+              ),
+              instanceDir,
             };
           })
       : defaults.profiles;
@@ -242,15 +275,15 @@ const pathExists = async (target: string) => {
   }
 };
 
-// Forge profiles run as isolated instances; vanilla profiles share the main
-// game directory. Mods and installed-mods.json live under the resolved path.
+// Each profile has its own instance directory.  For profiles persisted before
+// this field was introduced, instanceDir was already computed the same way at
+// launch time so nothing moves.
 const resolveInstanceDirectory = (
   gameDirectory: string,
   profile: LaunchProfile,
 ) =>
-  profile.loader === 'forge'
-    ? path.join(gameDirectory, 'simple-craft', 'profiles', profile.id)
-    : gameDirectory;
+  profile.instanceDir ||
+  path.join(gameDirectory, 'simple-craft', 'profiles', profile.id);
 
 // Maps a profile loader onto a Modrinth loader facet. Vanilla profiles have no
 // mod loader, so they cannot host Modrinth mods.
@@ -755,6 +788,11 @@ const registerIpcHandlers = () => {
       (profile) => profile.id === update.id,
     );
 
+    const javaSettings =
+      update.java !== undefined
+        ? normalizeJavaSettings(update.java)
+        : undefined;
+
     if (existing) {
       Object.assign(existing, {
         name,
@@ -768,11 +806,14 @@ const registerIpcHandlers = () => {
         minMemory,
         maxMemory,
         mods: loader === 'forge' ? existing.mods : [],
+        java: javaSettings ?? existing.java,
+        // instanceDir is intentionally not changed on edit to preserve existing saves.
       });
       settings.selectedProfileId = existing.id;
     } else {
+      const newId = randomUUID();
       const profile: LaunchProfile = {
-        id: randomUUID(),
+        id: newId,
         name,
         profileType: loader,
         loaderType: loader,
@@ -784,6 +825,13 @@ const registerIpcHandlers = () => {
         minMemory,
         maxMemory,
         mods: [],
+        java: javaSettings ?? normalizeJavaSettings(undefined),
+        instanceDir: path.join(
+          settings.gameDirectory,
+          'simple-craft',
+          'profiles',
+          newId,
+        ),
       };
       settings.profiles.push(profile);
       settings.selectedProfileId = profile.id;
@@ -805,6 +853,82 @@ const registerIpcHandlers = () => {
       return minecraftService.getForgeBuilds(minecraftVersion.trim());
     },
   );
+
+  ipcMain.handle(
+    'java:list-runtimes',
+    async (_event, options: unknown) => {
+      const input = (options ?? {}) as {
+        refresh?: boolean;
+        includeMojang?: boolean;
+      };
+      return javaRuntimeService.listRuntimes({
+        refresh: input.refresh === true,
+        includeMojang: input.includeMojang === true,
+      });
+    },
+  );
+
+  ipcMain.handle('java:add-custom', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Java実行ファイルを選択',
+      properties: ['openFile'],
+      filters:
+        process.platform === 'win32'
+          ? [{ name: 'Java実行ファイル', extensions: ['exe'] }]
+          : [],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+    return javaRuntimeService.addCustomRuntime(result.filePaths[0]);
+  });
+
+  ipcMain.handle('java:remove-runtime', async (_event, runtimeId: unknown) => {
+    if (typeof runtimeId !== 'string' || !runtimeId.trim()) {
+      throw new Error('Javaランタイム指定が不正です。');
+    }
+    return javaRuntimeService.removeRuntime(runtimeId.trim());
+  });
+
+  ipcMain.handle(
+    'java:install-runtime',
+    async (event, distribution: unknown, major: unknown) => {
+      if (typeof distribution !== 'string' || typeof major !== 'number') {
+        throw new Error('Javaインストール指定が不正です。');
+      }
+      if (launchWorkflowInProgress || minecraftService.isRunning()) {
+        throw new Error('Minecraft の起動処理中はJavaをインストールできません。');
+      }
+      return javaRuntimeService.installRuntime(
+        distribution as JavaDistributionId,
+        Math.round(major),
+        (progress) => {
+          if (!event.sender.isDestroyed()) {
+            event.sender.send('java:install-progress', progress);
+          }
+        },
+      );
+    },
+  );
+
+  ipcMain.handle('java:choose-executable', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Java実行ファイルを選択',
+      properties: ['openFile'],
+      filters:
+        process.platform === 'win32'
+          ? [{ name: 'Java実行ファイル', extensions: ['exe'] }]
+          : [],
+    });
+    if (result.canceled || !result.filePaths[0]) {
+      return null;
+    }
+    const baseName = path.basename(result.filePaths[0]).toLowerCase();
+    if (!/^javaw?(\.exe)?$/.test(baseName)) {
+      throw new Error('java / javaw 実行ファイルを選択してください。');
+    }
+    return result.filePaths[0];
+  });
 
   ipcMain.handle(
     'modrinth:search',
@@ -1162,17 +1286,16 @@ const registerIpcHandlers = () => {
               profile.loaderVersion as string,
               event.sender,
               offlineOnly,
+              { javaSettings: profile.java, instanceId: profile.id },
             )
           : profile.minecraftVersion;
       if (profile.resolvedVersionId !== versionId) {
         profile.resolvedVersionId = versionId;
         await writeSettings(settings);
       }
-      const instanceDirectory = path.join(
+      const instanceDirectory = resolveInstanceDirectory(
         settings.gameDirectory,
-        'simple-craft',
-        'profiles',
-        profile.id,
+        profile,
       );
       if (profile.loader === 'forge' && !offlineOnly) {
         await modrinthService.syncMods(
@@ -1188,9 +1311,11 @@ const registerIpcHandlers = () => {
         {
           minMemory: profile.minMemory,
           maxMemory: profile.maxMemory,
+          jvmArgs: profile.java.jvmArgs,
         },
         event.sender,
         instanceDirectory,
+        { javaSettings: profile.java, instanceId: profile.id },
       );
       return offlineOnly
         ? {
@@ -1247,10 +1372,15 @@ app.whenReady().then(async () => {
       error,
     );
   }
+  javaRuntimeService = new JavaRuntimeService(
+    path.join(app.getPath('userData'), 'runtime'),
+    log,
+  );
   minecraftService = new MinecraftService(
     async () => (await readSettings()).gameDirectory,
     path.join(app.getPath('userData'), 'runtime'),
     log,
+    javaRuntimeService,
   );
   registerIpcHandlers();
   createWindow();

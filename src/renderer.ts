@@ -8,6 +8,7 @@ import '@material/web/textfield/filled-text-field.js';
 import '@material/web/textfield/outlined-text-field.js';
 import '@material/web/select/filled-select.js';
 import '@material/web/select/select-option.js';
+import '@material/web/switch/switch.js';
 import '@material/web/tabs/tabs.js';
 import '@material/web/tabs/primary-tab.js';
 
@@ -96,6 +97,51 @@ type ProfileMod = {
   iconUrl: string | null;
 };
 
+type JavaDistributionId = 'liberica-lite' | 'liberica' | 'zulu' | 'temurin';
+
+type ProfileJavaSettings = {
+  mode: 'auto' | 'fixed' | 'customPath';
+  runtimeId: string | null;
+  customPath: string | null;
+  preferredDistributions: JavaDistributionId[];
+  jvmArgs: string[];
+};
+
+type JavaRuntimeInfo = {
+  id: string;
+  source: 'managed' | 'custom' | 'system' | 'mojang';
+  distribution: string;
+  majorVersion: number | null;
+  versionString: string | null;
+  arch: string | null;
+  path: string;
+  verified: boolean;
+  verifiedAt: string | null;
+  error?: string;
+};
+
+const defaultJavaSettings = (): ProfileJavaSettings => ({
+  mode: 'auto',
+  runtimeId: null,
+  customPath: null,
+  preferredDistributions: ['liberica-lite', 'liberica', 'zulu', 'temurin'],
+  jvmArgs: [],
+});
+
+const javaDistributionLabels: Record<string, string> = {
+  'liberica-lite': 'Liberica Lite',
+  liberica: 'Liberica Standard',
+  zulu: 'Azul Zulu',
+  temurin: 'Eclipse Temurin',
+  mojang: 'Mojang',
+  openjdk: 'OpenJDK',
+  oracle: 'Oracle',
+  microsoft: 'Microsoft',
+  corretto: 'Amazon Corretto',
+  graalvm: 'GraalVM',
+  unknown: '不明',
+};
+
 type LaunchProfile = {
   id: string;
   name: string;
@@ -109,6 +155,8 @@ type LaunchProfile = {
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
+  java: ProfileJavaSettings;
+  instanceDir: string;
 };
 
 type ForgeBuild = {
@@ -256,6 +304,8 @@ const demoState: LauncherState = {
       minMemory: 1024,
       maxMemory: 4096,
       mods: [],
+      java: defaultJavaSettings(),
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\simple-craft\\profiles\\default-profile',
     },
     {
       id: 'forge-profile',
@@ -283,6 +333,8 @@ const demoState: LauncherState = {
           iconUrl: null,
         },
       ],
+      java: defaultJavaSettings(),
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\simple-craft\\profiles\\forge-profile',
     },
   ],
   selectedProfileId: 'forge-profile',
@@ -338,6 +390,45 @@ const api = window.launcher ?? {
   ],
   selectProfile: async () => demoState,
   deleteProfile: async () => demoState,
+  listJavaRuntimes: async (): Promise<JavaRuntimeInfo[]> => [
+    {
+      id: 'managed:liberica-lite-21-x64',
+      source: 'managed',
+      distribution: 'liberica-lite',
+      majorVersion: 21,
+      versionString: 'openjdk version "21.0.3"',
+      arch: 'amd64',
+      path: 'C:\\launcher\\runtime\\java\\managed\\liberica-lite-21-x64\\bin\\java.exe',
+      verified: true,
+      verifiedAt: new Date().toISOString(),
+    },
+    {
+      id: 'system:demo',
+      source: 'system',
+      distribution: 'temurin',
+      majorVersion: 17,
+      versionString: 'openjdk version "17.0.11"',
+      arch: 'amd64',
+      path: 'C:\\Program Files\\Eclipse Adoptium\\jdk-17\\bin\\java.exe',
+      verified: true,
+      verifiedAt: new Date().toISOString(),
+    },
+  ],
+  addCustomJavaRuntime: async () => null,
+  removeJavaRuntime: async (): Promise<JavaRuntimeInfo[]> => [],
+  installJavaRuntime: async (): Promise<JavaRuntimeInfo> => ({
+    id: 'managed:demo',
+    source: 'managed',
+    distribution: 'liberica-lite',
+    majorVersion: 21,
+    versionString: 'openjdk version "21.0.3"',
+    arch: 'amd64',
+    path: 'C:\\demo\\java.exe',
+    verified: true,
+    verifiedAt: new Date().toISOString(),
+  }),
+  chooseJavaExecutable: async () => null,
+  onJavaInstallProgress: () => () => undefined,
   searchModrinth: async (): Promise<ModrinthProject[]> => [
     {
       projectId: 'demo-project',
@@ -480,12 +571,31 @@ const deleteProfileButton = byId<HTMLElement>('delete-profile-button');
 const cancelProfileButton = byId<HTMLElement>('cancel-profile-button');
 const saveProfileButton = byId<HTMLElement>('save-profile-button');
 
+// Java runtime management (settings modal)
+const javaRuntimeList = byId<HTMLElement>('java-runtime-list');
+const javaInstallDistribution = byId<HTMLElement>('java-install-distribution');
+const javaInstallMajor = byId<HTMLElement>('java-install-major');
+const javaInstallButton = byId<HTMLElement>('java-install-button');
+const javaRefreshButton = byId<HTMLElement>('java-refresh-button');
+const javaAddCustomButton = byId<HTMLElement>('java-add-custom-button');
+const javaInstallStatus = byId<HTMLElement>('java-install-status');
+
+// Java settings (profile editor)
+const profileJavaSelect = byId<HTMLElement>('profile-java-select');
+const profileJavaStatus = byId<HTMLElement>('profile-java-status');
+const profileJvmArgsInput = byId<HTMLElement>('profile-jvm-args-input');
+
 let currentState: LauncherState | undefined;
 let busy = false;
 let toastTimer: number | undefined;
 let deviceCodeTimer: number | undefined;
 let developerLogs: LauncherLogEntry[] = [];
 let forgeBuilds: ForgeBuild[] = [];
+let javaRuntimes: JavaRuntimeInfo[] = [];
+let javaRuntimesLoaded = false;
+let pendingCustomJavaPath: string | null = null;
+let showSnapshots = false;
+let profileEditorMode: 'create' | 'edit' = 'create';
 
 const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
   developerLogs = entries.slice(-500);
@@ -544,6 +654,7 @@ const openSettingsModal = () => {
   settingsModal?.removeAttribute('hidden');
   void api.getAuthFlowState().then(renderAuthFlow);
   void refreshDeveloperLogs();
+  void loadJavaRuntimes();
 };
 const closeSettingsModal = () => settingsModal?.setAttribute('hidden', '');
 const closeProfileModal = () => profileModal?.setAttribute('hidden', '');
@@ -748,17 +859,22 @@ const populateVersionSelect = (
 ) => {
   if (!select || !currentState) return;
   select.replaceChildren();
-  for (const version of [...currentState.availableVersions].sort(
-    compareVersionsByRelease,
-  )) {
+  // Snapshots are hidden by default; old_beta/old_alpha are never shown.
+  const eligible = currentState.availableVersions.filter((v) => {
+    if (v.type === 'old_beta' || v.type === 'old_alpha') return false;
+    if (v.type === 'snapshot') return showSnapshots;
+    return true;
+  });
+  for (const version of [...eligible].sort(compareVersionsByRelease)) {
     const suffix = version.installed ? '  /  INSTALLED' : '';
     const option = document.createElement('md-select-option');
     option.setAttribute('value', version.id);
     option.textContent = `${formatVersionLabel(version)}${suffix}`;
     select.append(option);
   }
-  (select as MdEl).disabled = currentState.availableVersions.length === 0;
-  if (currentState.availableVersions.some((version) => version.id === value)) {
+  (select as MdEl).disabled = eligible.length === 0;
+  // Keep previously selected value even if it's a snapshot that's now hidden.
+  if (currentState.availableVersions.some((v) => v.id === value)) {
     (select as MdEl).value = value;
   }
 };
@@ -960,15 +1076,221 @@ const renderSelectedMods = (profile: LaunchProfile | undefined) => {
   }
 };
 
+// --- Java runtime management -------------------------------------------------
+
+const describeJavaRuntime = (runtime: JavaRuntimeInfo) => {
+  const distribution =
+    javaDistributionLabels[runtime.distribution] ?? runtime.distribution;
+  const major =
+    runtime.majorVersion !== null ? `Java ${runtime.majorVersion}` : 'Java ?';
+  return `${distribution} / ${major}${runtime.arch ? ` / ${runtime.arch}` : ''}`;
+};
+
+const javaSourceLabels: Record<JavaRuntimeInfo['source'], string> = {
+  managed: 'ランチャー管理',
+  custom: '手動追加',
+  system: 'システム',
+  mojang: 'Mojang互換',
+};
+
+const renderJavaRuntimeList = () => {
+  if (!javaRuntimeList) return;
+  javaRuntimeList.replaceChildren();
+  // Mojang runtimes stay hidden here: they are a compatibility fallback, not
+  // a user-facing choice.
+  const visible = javaRuntimes.filter((runtime) => runtime.source !== 'mojang');
+  if (visible.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'java-runtime-empty';
+    empty.textContent =
+      'Javaが見つかりません。下の「インストール」から取得するか、手動で追加してください。';
+    javaRuntimeList.append(empty);
+    return;
+  }
+  for (const runtime of visible) {
+    const row = document.createElement('article');
+    row.className = `java-runtime-row${runtime.verified ? '' : ' invalid'}`;
+    const info = document.createElement('div');
+    info.className = 'java-runtime-info';
+    const title = document.createElement('strong');
+    title.textContent = describeJavaRuntime(runtime);
+    const meta = document.createElement('small');
+    meta.textContent = `${javaSourceLabels[runtime.source]} / ${
+      runtime.verified
+        ? runtime.versionString ?? '検証済み'
+        : `検証失敗: ${runtime.error ?? '不明'}`
+    }`;
+    const pathLine = document.createElement('small');
+    pathLine.className = 'java-runtime-path';
+    pathLine.textContent = runtime.path;
+    pathLine.title = runtime.path;
+    info.append(title, meta, pathLine);
+    row.append(info);
+    if (runtime.source === 'managed' || runtime.source === 'custom') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'mod-remove-button';
+      remove.dataset.javaRuntimeId = runtime.id;
+      remove.textContent = '削除';
+      row.append(remove);
+    }
+    javaRuntimeList.append(row);
+  }
+};
+
+const loadJavaRuntimes = async (refresh = false) => {
+  try {
+    javaRuntimes = await api.listJavaRuntimes({ refresh });
+    javaRuntimesLoaded = true;
+    renderJavaRuntimeList();
+  } catch (error) {
+    showToast(
+      error instanceof Error
+        ? error.message
+        : 'Javaランタイム一覧を取得できませんでした。',
+      true,
+    );
+  }
+};
+
+const setJavaInstallStatus = (message: string) => {
+  if (!javaInstallStatus) return;
+  javaInstallStatus.hidden = !message;
+  javaInstallStatus.textContent = message;
+};
+
+const updateProfileJavaStatus = () => {
+  if (!profileJavaStatus) return;
+  const value = String((profileJavaSelect as MdEl)?.value ?? 'auto');
+  if (value === 'custom') {
+    profileJavaStatus.hidden = false;
+    profileJavaStatus.textContent = pendingCustomJavaPath
+      ? `使用するJava: ${pendingCustomJavaPath}`
+      : 'Java実行ファイルが未選択です。';
+    return;
+  }
+  if (value.startsWith('fixed:')) {
+    const runtime = javaRuntimes.find(
+      (candidate) => candidate.id === value.slice('fixed:'.length),
+    );
+    profileJavaStatus.hidden = !runtime;
+    if (runtime) profileJavaStatus.textContent = runtime.path;
+    return;
+  }
+  profileJavaStatus.hidden = false;
+  profileJavaStatus.textContent =
+    'Minecraftバージョンに応じて必要なJavaを自動選択・自動取得します。';
+};
+
+const javaSettingsToSelectValue = (java: ProfileJavaSettings) => {
+  if (java.mode === 'customPath') return 'custom';
+  if (java.mode === 'fixed' && java.runtimeId) return `fixed:${java.runtimeId}`;
+  const preferred = java.preferredDistributions[0] ?? 'liberica-lite';
+  return preferred === 'liberica-lite' ? 'auto' : `auto:${preferred}`;
+};
+
+const populateProfileJavaSelect = (java: ProfileJavaSettings) => {
+  if (!profileJavaSelect) return;
+  profileJavaSelect.replaceChildren();
+  const appendOption = (value: string, label: string) => {
+    const option = document.createElement('md-select-option');
+    option.setAttribute('value', value);
+    option.textContent = label;
+    profileJavaSelect.append(option);
+    return option;
+  };
+  appendOption('auto', '自動（推奨: Liberica Lite）');
+  appendOption('auto:liberica', '自動 / Liberica Standard');
+  appendOption('auto:zulu', '自動 / Azul Zulu');
+  appendOption('auto:temurin', '自動 / Eclipse Temurin');
+  for (const runtime of javaRuntimes) {
+    if (runtime.source === 'mojang' || !runtime.verified) continue;
+    appendOption(
+      `fixed:${runtime.id}`,
+      `${describeJavaRuntime(runtime)}（${javaSourceLabels[runtime.source]}）`,
+    );
+  }
+  appendOption('custom', '手動選択...');
+
+  const value = javaSettingsToSelectValue(java);
+  if (
+    value.startsWith('fixed:') &&
+    !javaRuntimes.some((runtime) => `fixed:${runtime.id}` === value)
+  ) {
+    // The fixed runtime disappeared; keep the reference visible so saving
+    // without touching the field does not silently change the setting.
+    appendOption(value, `不明なJavaランタイム（${java.runtimeId}）`);
+  }
+  (profileJavaSelect as MdEl).value = value;
+  pendingCustomJavaPath = java.customPath;
+  if (profileJvmArgsInput) {
+    (profileJvmArgsInput as MdEl).value = java.jvmArgs.join(' ');
+  }
+  updateProfileJavaStatus();
+};
+
+const collectProfileJavaSettings = (): ProfileJavaSettings => {
+  const defaults = defaultJavaSettings();
+  const value = String((profileJavaSelect as MdEl)?.value ?? 'auto');
+  const jvmArgs = String((profileJvmArgsInput as MdEl)?.value ?? '')
+    .split(/\s+/)
+    .map((argument) => argument.trim())
+    .filter(Boolean);
+  if (value === 'custom') {
+    if (!pendingCustomJavaPath) {
+      throw new Error('Java実行ファイルを選択してください。');
+    }
+    return {
+      ...defaults,
+      mode: 'customPath',
+      customPath: pendingCustomJavaPath,
+      jvmArgs,
+    };
+  }
+  if (value.startsWith('fixed:')) {
+    return {
+      ...defaults,
+      mode: 'fixed',
+      runtimeId: value.slice('fixed:'.length),
+      jvmArgs,
+    };
+  }
+  if (value.startsWith('auto:')) {
+    const preferred = value.slice('auto:'.length) as JavaDistributionId;
+    return {
+      ...defaults,
+      preferredDistributions: [
+        preferred,
+        ...defaults.preferredDistributions.filter(
+          (candidate) => candidate !== preferred,
+        ),
+      ],
+      jvmArgs,
+    };
+  }
+  return { ...defaults, jvmArgs };
+};
+
 const openProfileEditor = (profile?: LaunchProfile) => {
   if (!currentState) return;
+  profileEditorMode = profile ? 'edit' : 'create';
   if (profileModalTitle) {
     profileModalTitle.textContent = profile
       ? 'プロファイルを編集'
       : 'プロファイルを作成';
   }
+  // Modrinth search is only available in edit mode (profile must exist first).
+  const modrinthTab = document.querySelector<HTMLElement>(
+    '[data-profile-tab="modrinth"]',
+  );
+  if (modrinthTab) {
+    modrinthTab.hidden = profileEditorMode === 'create';
+  }
   if (profileIdInput) profileIdInput.value = profile?.id ?? '';
   if (profileNameInput) (profileNameInput as MdEl).value = profile?.name ?? '';
+  // Sync snapshot toggle UI state before populating the select.
+  const snapshotToggle = byId<HTMLElement>('snapshot-toggle');
+  if (snapshotToggle) (snapshotToggle as MdEl & { selected?: boolean }).selected = showSnapshots;
   populateVersionSelect(
     profileVersionSelect,
     profile?.minecraftVersion ??
@@ -1011,6 +1333,13 @@ const openProfileEditor = (profile?: LaunchProfile) => {
     profileForgeBuildStatus.textContent =
       'Forge buildを選択してください。';
   }
+  const javaSettings = profile?.java ?? defaultJavaSettings();
+  populateProfileJavaSelect(javaSettings);
+  if (!javaRuntimesLoaded) {
+    void loadJavaRuntimes().then(() =>
+      populateProfileJavaSelect(javaSettings),
+    );
+  }
   renderSelectedMods(profile);
   profileModal?.removeAttribute('hidden');
   const initialTab =
@@ -1046,6 +1375,15 @@ const saveProfileEditor = async (close = true) => {
     if (loader === 'forge' && !loaderVersion) {
       throw new Error('Forge buildを選択してください。');
     }
+    // Snapshot warning (non-blocking — toast only).
+    if (loader === 'vanilla') {
+      const selectedVersion = currentState?.availableVersions.find(
+        (v) => v.id === minecraftVersion,
+      );
+      if (selectedVersion?.type === 'snapshot') {
+        showToast('Snapshot版は不安定な可能性があります。', false);
+      }
+    }
     const state = await api.saveProfile({
       id: profileIdInput?.value || undefined,
       name: ((profileNameInput as MdEl)?.value as string) ?? '',
@@ -1061,6 +1399,7 @@ const saveProfileEditor = async (close = true) => {
       loader,
       minMemory: Number((profileMinMemoryInput as MdEl)?.value ?? 1024),
       maxMemory: Number((profileMaxMemoryInput as MdEl)?.value ?? 4096),
+      java: collectProfileJavaSettings(),
     });
     renderState(state);
     if (profileIdInput) profileIdInput.value = state.selectedProfileId;
@@ -1587,6 +1926,113 @@ deviceCodeCancel?.addEventListener('click', async () => {
     deviceCode: null,
     message: 'Microsoft認証をキャンセルしました。',
   });
+});
+
+// --- Snapshot toggle -----------------------------------------------------------
+
+document.getElementById('snapshot-toggle')?.addEventListener('change', (event) => {
+  showSnapshots = (event.target as MdEl & { selected?: boolean }).selected ?? false;
+  populateVersionSelect(
+    profileVersionSelect,
+    (profileVersionSelect as MdEl)?.value as string ?? '',
+  );
+});
+
+// --- Java runtime management events -------------------------------------------
+
+javaRefreshButton?.addEventListener('click', () => {
+  setJavaInstallStatus('Javaを再検出しています...');
+  void loadJavaRuntimes(true).then(() => setJavaInstallStatus(''));
+});
+
+javaAddCustomButton?.addEventListener('click', async () => {
+  try {
+    const runtimes = await api.addCustomJavaRuntime();
+    if (!runtimes) return;
+    javaRuntimes = runtimes;
+    javaRuntimesLoaded = true;
+    renderJavaRuntimeList();
+    showToast('Javaランタイムを追加しました。');
+  } catch (error) {
+    showToast(
+      error instanceof Error ? error.message : 'Javaを追加できませんでした。',
+      true,
+    );
+  }
+});
+
+javaInstallButton?.addEventListener('click', async () => {
+  const distribution = String(
+    (javaInstallDistribution as MdEl)?.value ?? 'liberica-lite',
+  ) as JavaDistributionId;
+  const major = Number((javaInstallMajor as MdEl)?.value ?? 21);
+  (javaInstallButton as MdEl).disabled = true;
+  setJavaInstallStatus('インストールを開始しています...');
+  try {
+    await api.installJavaRuntime(distribution, major);
+    await loadJavaRuntimes();
+    setJavaInstallStatus('');
+    showToast('Javaランタイムをインストールしました。');
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : 'Javaをインストールできませんでした。';
+    setJavaInstallStatus(message);
+    showToast(message, true);
+  } finally {
+    (javaInstallButton as MdEl).disabled = false;
+  }
+});
+
+javaRuntimeList?.addEventListener('click', async (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
+    'button[data-java-runtime-id]',
+  );
+  if (!button?.dataset.javaRuntimeId) return;
+  button.disabled = true;
+  try {
+    javaRuntimes = await api.removeJavaRuntime(button.dataset.javaRuntimeId);
+    javaRuntimesLoaded = true;
+    renderJavaRuntimeList();
+    showToast('Javaランタイムを削除しました。');
+  } catch (error) {
+    button.disabled = false;
+    showToast(
+      error instanceof Error ? error.message : 'Javaを削除できませんでした。',
+      true,
+    );
+  }
+});
+
+api.onJavaInstallProgress((payload) => {
+  const message =
+    typeof payload.message === 'string' ? payload.message : '処理中...';
+  const percent = typeof payload.percent === 'number' ? payload.percent : 0;
+  setJavaInstallStatus(`${message} (${percent}%)`);
+});
+
+profileJavaSelect?.addEventListener('change', async () => {
+  const value = String((profileJavaSelect as MdEl)?.value ?? 'auto');
+  if (value === 'custom' && !pendingCustomJavaPath) {
+    try {
+      const chosen = await api.chooseJavaExecutable();
+      if (chosen) {
+        pendingCustomJavaPath = chosen;
+      } else {
+        (profileJavaSelect as MdEl).value = 'auto';
+      }
+    } catch (error) {
+      (profileJavaSelect as MdEl).value = 'auto';
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'Java実行ファイルを選択できませんでした。',
+        true,
+      );
+    }
+  }
+  updateProfileJavaStatus();
 });
 
 api.onDeviceCode((payload) => {

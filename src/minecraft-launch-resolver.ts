@@ -21,6 +21,7 @@ const execFileAsync = promisify(execFile);
 type LaunchSettings = {
   minMemory: number;
   maxMemory: number;
+  jvmArgs?: string[];
 };
 
 type LogWriter = (
@@ -201,6 +202,17 @@ export class MinecraftLaunchResolver {
       );
     }
     const [command, ...args] = generated;
+    // Profile-level extra JVM arguments go right before the main class so
+    // they participate in JVM startup without disturbing game arguments.
+    const extraJvmArgs = (input.settings.jvmArgs ?? []).filter((argument) =>
+      argument.trim(),
+    );
+    if (extraJvmArgs.length > 0) {
+      const mainClassIndex = args.indexOf(version.mainClass);
+      if (mainClassIndex >= 0) {
+        args.splice(mainClassIndex, 0, ...extraJvmArgs);
+      }
+    }
     if (!command || args.length === 0) {
       throw new MinecraftError(
         'Minecraft起動コマンドまたは引数が空です。',
@@ -231,17 +243,23 @@ export class MinecraftLaunchResolver {
     }
     const javaVersion = await readJavaVersion(command);
     const javaMajorVersion = parseJavaMajorVersion(javaVersion);
+    // javaVersion may be absent for very old MC versions; skip check when absent.
+    const requiredMajorVersion = version.javaVersion?.majorVersion;
     if (
       javaMajorVersion !== undefined &&
-      javaMajorVersion !== version.javaVersion.majorVersion
+      requiredMajorVersion !== undefined &&
+      requiredMajorVersion > 0 &&
+      javaMajorVersion !== requiredMajorVersion
     ) {
       throw new MinecraftError(
-        `Java ${version.javaVersion.majorVersion} is required, but Java ${javaMajorVersion} was selected.`,
+        `Java ${requiredMajorVersion} is required, but Java ${javaMajorVersion} was selected.\n` +
+          `必要Java: Java ${requiredMajorVersion}\n現在選択Java: Java ${javaMajorVersion} (${command})\n` +
+          '解決方法: プロファイルのJava設定を「自動」へ戻すか、必要なJavaを「Javaランタイム管理」からインストールしてください。',
         'java',
         'JAVA_VERSION_MISMATCH',
         {
           javaPath: command,
-          requiredMajorVersion: version.javaVersion.majorVersion,
+          requiredMajorVersion,
           actualMajorVersion: javaMajorVersion,
         },
       );
@@ -252,7 +270,7 @@ export class MinecraftLaunchResolver {
     this.log('info', 'java', 'Minecraftで使用するJavaを確認しました。', {
       executable: command,
       version: javaVersion,
-      requiredMajorVersion: version.javaVersion.majorVersion,
+      requiredMajorVersion: version.javaVersion?.majorVersion,
     });
     this.log('info', 'arguments', 'Minecraft起動引数を生成しました。', {
       versionId: version.id,

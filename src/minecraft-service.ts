@@ -15,6 +15,11 @@ import type {
 } from './diagnostics';
 import { ForgeService } from './forge-service';
 import {
+  defaultJavaSettings,
+  type JavaRuntimeService,
+  type ProfileJavaSettings,
+} from './java-runtime-service';
+import {
   MinecraftDownloader,
   type MinecraftDownloadProgress,
 } from './minecraft-downloader';
@@ -59,6 +64,12 @@ export type ProgressEvent = {
 type LaunchSettings = {
   minMemory: number;
   maxMemory: number;
+  jvmArgs?: string[];
+};
+
+type JavaLaunchOptions = {
+  javaSettings?: ProfileJavaSettings;
+  instanceId?: string;
 };
 
 type LogWriter = (
@@ -80,6 +91,7 @@ export class MinecraftService {
     private readonly gameDirectory: () => Promise<string>,
     private readonly runtimeRoot: string,
     private readonly log: LogWriter = () => undefined,
+    private readonly javaService?: JavaRuntimeService,
   ) {
     this.downloader = new MinecraftDownloader(gameDirectory, log);
     this.resolver = new MinecraftLaunchResolver(log);
@@ -153,7 +165,7 @@ export class MinecraftService {
         version.id,
         (progress) => this.reportDownload(sender, progress),
       );
-      await this.ensureJava(prepared.version, sender);
+      await this.provisionJava(prepared.version, sender);
       this.report(sender, {
         phase: 'complete',
         percent: 100,
@@ -255,14 +267,17 @@ export class MinecraftService {
     sender: WebContents,
     offlineOnly = false,
   ) {
-    const component = version.javaVersion.component;
+    // javaVersion may be absent in very old version JSONs; fall back to
+    // jre-legacy (Java 8) which covers all pre-1.17 releases.
+    const component = version.javaVersion?.component || 'jre-legacy';
+    const majorVersion = version.javaVersion?.majorVersion ?? 8;
     const runtimeDirectory = path.join(this.runtimeRoot, component);
     const executable = resolveJavaExecutable(runtimeDirectory);
     try {
       await fs.access(executable);
       this.log('info', 'java', 'Java実行ファイルを検出しました。', {
         component,
-        majorVersion: version.javaVersion.majorVersion,
+        majorVersion,
         executable,
       });
       return executable;
@@ -274,7 +289,7 @@ export class MinecraftService {
           'JAVA_NOT_FOUND_OFFLINE',
           {
             component,
-            majorVersion: version.javaVersion.majorVersion,
+            majorVersion,
             executable,
           },
         );
@@ -282,11 +297,11 @@ export class MinecraftService {
       this.report(sender, {
         phase: 'java',
         percent: 0,
-        message: `Java ${version.javaVersion.majorVersion} を準備しています`,
+        message: `Java ${majorVersion} を準備しています`,
       });
       this.log('warn', 'java', 'Java runtimeがないため取得します。', {
         component,
-        majorVersion: version.javaVersion.majorVersion,
+        majorVersion,
         executable,
       });
     }
@@ -302,7 +317,7 @@ export class MinecraftService {
           sender,
           task,
           'java',
-          `Java ${version.javaVersion.majorVersion} をダウンロードしています`,
+          `Java ${majorVersion} をダウンロードしています`,
         ),
       );
       await fs.access(executable);
@@ -315,10 +330,43 @@ export class MinecraftService {
     }
     this.log('info', 'java', 'Java runtimeの取得が完了しました。', {
       component,
-      majorVersion: version.javaVersion.majorVersion,
+      majorVersion,
       executable,
     });
     return executable;
+  }
+
+  /**
+   * Resolves the launch Java. Prefers JavaRuntimeService (Liberica-first auto
+   * selection / per-instance settings); the legacy Mojang runtime path is the
+   * compatibility fallback and the only path when no JavaRuntimeService is
+   * injected (tests).
+   */
+  private async provisionJava(
+    version: ResolvedVersion,
+    sender: WebContents,
+    offlineOnly = false,
+    options: JavaLaunchOptions = {},
+  ) {
+    if (!this.javaService) {
+      return this.ensureJava(version, sender, offlineOnly);
+    }
+    const selection = await this.javaService.resolveForLaunch({
+      settings: options.javaSettings ?? defaultJavaSettings(),
+      minecraftVersion: version.minecraftVersion ?? version.id,
+      metadataMajorVersion: version.javaVersion?.majorVersion,
+      offlineOnly,
+      instanceId: options.instanceId,
+      onProgress: (progress) =>
+        this.report(sender, {
+          phase: 'java',
+          percent: progress.percent,
+          message: progress.message,
+          file: progress.file,
+        }),
+      mojangFallback: () => this.ensureJava(version, sender, offlineOnly),
+    });
+    return selection.javaPath;
   }
 
   async ensureForge(
@@ -326,6 +374,7 @@ export class MinecraftService {
     loaderVersion: string,
     sender: WebContents,
     offlineOnly = false,
+    javaOptions: JavaLaunchOptions = {},
   ) {
     if (offlineOnly) {
       return this.forgeService.verifyReady(
@@ -347,7 +396,12 @@ export class MinecraftService {
         { cause: error },
       );
     }
-    const java = await this.ensureJava(baseVersion, sender);
+    const java = await this.provisionJava(
+      baseVersion,
+      sender,
+      false,
+      javaOptions,
+    );
     try {
       return await this.forgeService.ensureInstalled(
         minecraftVersion,
@@ -377,6 +431,7 @@ export class MinecraftService {
     settings: LaunchSettings,
     sender: WebContents,
     instanceDirectory?: string,
+    javaOptions: JavaLaunchOptions = {},
   ) {
     if (this.runner.isRunning() || this.launchInProgress) {
       throw new MinecraftError(
@@ -400,10 +455,11 @@ export class MinecraftService {
         (progress) => this.reportDownload(sender, progress),
         { offlineOnly: session.mode === 'authenticated-offline' },
       );
-      const javaPath = await this.ensureJava(
+      const javaPath = await this.provisionJava(
         prepared.version,
         sender,
         session.mode === 'authenticated-offline',
+        javaOptions,
       );
 
       this.report(sender, {

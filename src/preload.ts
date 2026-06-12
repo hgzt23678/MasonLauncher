@@ -23,6 +23,14 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('profile:save', profile),
   getForgeBuilds: (minecraftVersion: string) =>
     ipcRenderer.invoke('forge:list-builds', minecraftVersion),
+  listJavaRuntimes: (options?: Record<string, unknown>) =>
+    ipcRenderer.invoke('java:list-runtimes', options ?? {}),
+  addCustomJavaRuntime: () => ipcRenderer.invoke('java:add-custom'),
+  removeJavaRuntime: (runtimeId: string) =>
+    ipcRenderer.invoke('java:remove-runtime', runtimeId),
+  installJavaRuntime: (distribution: string, major: number) =>
+    ipcRenderer.invoke('java:install-runtime', distribution, major),
+  chooseJavaExecutable: () => ipcRenderer.invoke('java:choose-executable'),
   selectProfile: (profileId: string) =>
     ipcRenderer.invoke('profile:select', profileId),
   deleteProfile: (profileId: string) =>
@@ -88,4 +96,6 @@ contextBridge.exposeInMainWorld('launcher', {
   onLog: (callback: EventCallback) => subscribe('launcher:log', callback),
   onModrinthDownloadProgress: (callback: EventCallback) =>
     subscribe('modrinth:download-progress', callback),
+  onJavaInstallProgress: (callback: EventCallback) =>
+    subscribe('java:install-progress', callback),
 });

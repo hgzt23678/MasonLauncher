@@ -12,7 +12,10 @@
     "publish": "electron-forge publish",
     "lint": "eslint --ext .ts,.tsx .",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test tests/**/*.test.ts"
+    "test": "tsx --test tests/**/*.test.ts",
+    "check": "npm run typecheck && npm run lint && npm run test",
+    "build": "npm run check && npm run make",
+    "build:package": "npm run check && npm run package"
   },
   "keywords": [],
   "author": "hgzt23678",

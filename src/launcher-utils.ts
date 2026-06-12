@@ -120,7 +120,7 @@ export const buildLaunchOptions = (input: {
   version: input.version,
   extraExecOption: {
     cwd: input.gamePath,
-    windowsHide: false,
+    windowsHide: true,
   },
 });
 

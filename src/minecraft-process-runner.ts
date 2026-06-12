@@ -121,7 +121,8 @@ export class MinecraftProcessRunner {
     const options: SpawnOptions = {
       cwd: request.cwd,
       shell: false,
-      windowsHide: false,
+      // java.exe runtimes would otherwise flash a console window on Windows.
+      windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     };
     const validated = validateSpawnRequest({

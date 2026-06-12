@@ -1085,3 +1085,62 @@ md-tabs {
 /* ─── Animations ─── */
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 50% { opacity: 0.3; } }
+
+/* ─── Java runtime management ─── */
+.java-runtime-section { display: grid; gap: 12px; }
+
+.java-runtime-list { display: grid; gap: 7px; }
+
+.java-runtime-empty {
+  margin: 0;
+  color: #687164;
+  font-size: 9px;
+}
+
+.java-runtime-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #2d382a;
+  border-radius: 3px;
+  background: #171e16;
+}
+
+.java-runtime-row.invalid { border-color: #714036; }
+
+.java-runtime-info { display: grid; gap: 3px; min-width: 0; }
+.java-runtime-info strong { font-size: 10px; color: #dfead8; }
+.java-runtime-info small { color: #6e7969; font-size: 8px; }
+
+.java-runtime-path {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: Consolas, "Courier New", monospace;
+}
+
+.java-install-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.java-install-row md-filled-select { flex: 1; min-width: 140px; }
+
+.java-settings-section { display: grid; gap: 12px; }
+
+/* Snapshot toggle row */
+.snapshot-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+.snapshot-toggle-label {
+  font-size: 0.85rem;
+  color: var(--md-sys-color-on-surface-variant);
+  user-select: none;
+}

@@ -58,6 +58,29 @@ type AuthFlowState = {
   diagnostic?: EntraDiagnostic;
 };
 
+type JavaDistributionId = 'liberica-lite' | 'liberica' | 'zulu' | 'temurin';
+
+type ProfileJavaSettings = {
+  mode: 'auto' | 'fixed' | 'customPath';
+  runtimeId: string | null;
+  customPath: string | null;
+  preferredDistributions: JavaDistributionId[];
+  jvmArgs: string[];
+};
+
+type JavaRuntimeInfo = {
+  id: string;
+  source: 'managed' | 'custom' | 'system' | 'mojang';
+  distribution: string;
+  majorVersion: number | null;
+  versionString: string | null;
+  arch: string | null;
+  path: string;
+  verified: boolean;
+  verifiedAt: string | null;
+  error?: string;
+};
+
 type LaunchProfile = {
   id: string;
   name: string;
@@ -76,6 +99,9 @@ type LaunchProfile = {
     title: string;
     iconUrl: string | null;
   }>;
+  java: ProfileJavaSettings;
+  /** Absolute path to the profile's isolated game directory. */
+  instanceDir: string;
 };
 
 type LauncherState = {
@@ -261,6 +287,17 @@ declare global {
           installerUrl: string;
         }>
       >;
+      listJavaRuntimes: (options?: {
+        refresh?: boolean;
+        includeMojang?: boolean;
+      }) => Promise<JavaRuntimeInfo[]>;
+      addCustomJavaRuntime: () => Promise<JavaRuntimeInfo[] | null>;
+      removeJavaRuntime: (runtimeId: string) => Promise<JavaRuntimeInfo[]>;
+      installJavaRuntime: (
+        distribution: JavaDistributionId,
+        major: number,
+      ) => Promise<JavaRuntimeInfo>;
+      chooseJavaExecutable: () => Promise<string | null>;
       selectProfile: (profileId: string) => Promise<LauncherState>;
       deleteProfile: (profileId: string) => Promise<LauncherState>;
       searchModrinth: (
@@ -329,6 +366,9 @@ declare global {
       ) => () => void;
       onLog: (callback: (payload: LauncherEvent) => void) => () => void;
       onModrinthDownloadProgress: (
+        callback: (payload: LauncherEvent) => void,
+      ) => () => void;
+      onJavaInstallProgress: (
         callback: (payload: LauncherEvent) => void,
       ) => () => void;
     };

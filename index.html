@@ -167,6 +167,34 @@
           設定を保存
         </md-filled-button>
 
+        <p class="settings-caption">Javaランタイム管理</p>
+        <div class="settings-section java-runtime-section">
+          <div class="java-runtime-list" id="java-runtime-list" aria-live="polite">
+            <p class="java-runtime-empty">Javaを検出しています...</p>
+          </div>
+          <div class="java-install-row">
+            <md-filled-select id="java-install-distribution" label="配布元">
+              <md-select-option value="liberica-lite" selected>Liberica Lite（推奨）</md-select-option>
+              <md-select-option value="liberica">Liberica Standard</md-select-option>
+              <md-select-option value="zulu">Azul Zulu</md-select-option>
+              <md-select-option value="temurin">Eclipse Temurin</md-select-option>
+            </md-filled-select>
+            <md-filled-select id="java-install-major" label="Javaバージョン">
+              <md-select-option value="21" selected>Java 21</md-select-option>
+              <md-select-option value="17">Java 17</md-select-option>
+              <md-select-option value="16">Java 16</md-select-option>
+              <md-select-option value="8">Java 8</md-select-option>
+              <md-select-option value="25">Java 25</md-select-option>
+            </md-filled-select>
+            <md-outlined-button id="java-install-button" type="button">インストール</md-outlined-button>
+          </div>
+          <div class="dir-action-row">
+            <md-text-button id="java-refresh-button" type="button">再検出</md-text-button>
+            <md-text-button id="java-add-custom-button" type="button">手動で追加</md-text-button>
+          </div>
+          <p id="java-install-status" class="forge-status-text" hidden></p>
+        </div>
+
         <div class="device-code-panel" id="device-code-panel" hidden>
           <p>ブラウザでMicrosoftにログインし、次のコードを入力してください。</p>
           <strong id="device-code">--------</strong>
@@ -240,6 +268,10 @@
 
           <div id="profile-vanilla-panel" class="tab-panel">
             <md-filled-select id="profile-version-select" label="Minecraft バージョン"></md-filled-select>
+            <div class="snapshot-toggle-row">
+              <label class="snapshot-toggle-label" for="snapshot-toggle">スナップショットを表示</label>
+              <md-switch id="snapshot-toggle" aria-label="スナップショットを表示する"></md-switch>
+            </div>
           </div>
         </div>
 
@@ -263,6 +295,16 @@
             label="最大メモリ (MB)"
             min="1024"
             step="256"
+          ></md-filled-text-field>
+        </div>
+
+        <div class="settings-section java-settings-section">
+          <md-filled-select id="profile-java-select" label="Java設定"></md-filled-select>
+          <p id="profile-java-status" class="forge-status-text" hidden></p>
+          <md-filled-text-field
+            id="profile-jvm-args-input"
+            label="追加JVM引数（任意・空白区切り）"
+            placeholder="例: -XX:+UseG1GC"
           ></md-filled-text-field>
         </div>
 
