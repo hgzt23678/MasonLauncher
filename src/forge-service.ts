@@ -778,8 +778,7 @@ export class ForgeService {
                 .toString()
                 .split(/\r?\n/)
                 .map((value) => value.trim())
-                .filter(Boolean)
-                .slice(0, 50)) {
+                .filter(Boolean)) {
                 this.log('warn', 'forge', line, {
                   stream: 'processor-stderr',
                 });

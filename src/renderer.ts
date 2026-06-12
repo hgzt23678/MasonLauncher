@@ -2134,13 +2134,21 @@ api.onProcessState((payload) => {
   if (currentState) currentState.gameRunning = running;
   updateProfileCards();
   if (!running) statusBar?.setAttribute('hidden', '');
+  const isCrash =
+    !running &&
+    (payload.category === 'crash' ||
+      payload.category === 'spawn' ||
+      (typeof payload.code === 'number' && payload.code !== 0));
+  if (isCrash) {
+    // Refresh logs so the Java stderr is immediately visible in the settings panel.
+    void refreshDeveloperLogs();
+  }
   if (message) {
     showToast(
-      formatCategorizedMessage(message, payload.category),
-      !running &&
-        (payload.category === 'crash' ||
-          payload.category === 'spawn' ||
-          (typeof payload.code === 'number' && payload.code !== 0)),
+      isCrash
+        ? `${formatCategorizedMessage(message, payload.category)} — 設定パネルのログで詳細を確認できます。`
+        : formatCategorizedMessage(message, payload.category),
+      isCrash,
     );
   }
 });
