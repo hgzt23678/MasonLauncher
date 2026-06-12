@@ -103,42 +103,44 @@ body {
   margin-top: 54px;
 }
 
-.nav-button {
-  display: grid;
-  width: 42px;
-  height: 42px;
-  padding: 11px;
+.nav-icon-btn {
+  --md-icon-button-container-width: 42px;
+  --md-icon-button-container-height: 42px;
+  --md-icon-button-icon-size: 20px;
+  --md-icon-button-container-shape: 5px;
+  --md-icon-button-icon-color: #b7c2af;
+  --md-icon-button-hover-state-layer-color: #1a2318;
+  --md-icon-button-hover-state-layer-opacity: 1;
+  --md-icon-button-pressed-state-layer-color: #263a20;
+  --md-icon-button-pressed-state-layer-opacity: 1;
+  color: #b7c2af;
   border: 1px solid transparent;
-  border-radius: 5px;
-  background: transparent;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition: border-color 160ms ease, transform 160ms ease;
 }
 
-.nav-button:hover {
+.nav-icon-btn:hover {
   border-color: #43513e;
-  background: #1a2318;
   transform: translateY(-1px);
 }
 
-.nav-button.active {
+.nav-icon-btn[data-active="true"] {
+  --md-icon-button-icon-color: #a9dc81;
+  color: #a9dc81;
   border-color: #537d3d;
   background: #263a20;
   box-shadow: 3px 3px 0 #080b08;
 }
 
-.nav-button svg {
+.nav-icon-btn svg {
   width: 100%;
   fill: none;
-  stroke: #b7c2af;
+  stroke: currentColor;
   stroke-linecap: square;
   stroke-linejoin: miter;
   stroke-width: 1.8;
 }
 
-.nav-button.active svg { stroke: #a9dc81; }
-
-.nav-button.spinning svg { animation: spin 800ms linear infinite; }
+.nav-icon-btn.spinning svg { animation: spin 800ms linear infinite; }
 
 .sidebar-status {
   margin-top: auto;
@@ -217,22 +219,25 @@ h1 {
 .scan-status.loading .status-dot { animation: pulse 900ms ease-in-out infinite; }
 .scan-status.warning .status-dot { background: #d9a84f; }
 
-.account-button {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  height: 36px;
-  padding: 0 12px 0 7px;
-  border: 1px solid #334130;
-  border-radius: 4px;
+.account-btn {
+  --md-outlined-button-container-height: 36px;
+  --md-outlined-button-container-shape: 4px;
+  --md-outlined-button-outline-color: #334130;
+  --md-outlined-button-hover-outline-color: #668154;
+  --md-outlined-button-focus-outline-color: #668154;
+  --md-outlined-button-label-text-size: 10px;
+  --md-outlined-button-label-text-color: #b7c2af;
+  --md-outlined-button-hover-label-text-color: #c7d2c0;
+  --md-outlined-button-pressed-label-text-color: #c7d2c0;
+  --md-outlined-button-hover-state-layer-color: #1b2619;
+  --md-outlined-button-hover-state-layer-opacity: 1;
+  --md-outlined-button-pressed-state-layer-color: #1b2619;
+  --md-outlined-button-pressed-state-layer-opacity: 1;
+  --md-outlined-button-icon-size: 24px;
+  --md-outlined-button-with-leading-icon-leading-space: 7px;
+  --md-outlined-button-trailing-space: 12px;
   background: #151d14;
-  cursor: pointer;
-  font-size: 10px;
-}
-
-.account-button:hover {
-  border-color: #668154;
-  background: #1b2619;
+  font-family: inherit;
 }
 
 .account-avatar, .profile-avatar {
@@ -1024,19 +1029,18 @@ md-tabs {
 .mod-result strong { font-size: 11px; }
 .mod-result p { overflow: hidden; margin: 3px 0; color: #7b8675; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .mod-result small { color: #60705a; font-size: 8px; }
-.mod-result button { border: 0; cursor: pointer; background: transparent; font: inherit; color: inherit; }
-.mod-result button:disabled { cursor: default; opacity: 0.48; }
-
-/* Mod remove button */
-.mod-remove-button {
-  border: 0;
-  background: transparent;
-  cursor: pointer;
-  font-size: 9px;
-  color: #7d8977;
+.mod-result md-outlined-button {
+  --md-outlined-button-container-height: 28px;
+  --md-outlined-button-label-text-size: 10px;
 }
 
-.mod-remove-button:hover { color: #c7d2c0; }
+md-text-button[data-project-id],
+md-text-button[data-java-runtime-id] {
+  --md-text-button-label-text-size: 9px;
+  --md-text-button-label-text-color: #7d8977;
+  --md-text-button-hover-label-text-color: #c7d2c0;
+  --md-text-button-pressed-label-text-color: #c7d2c0;
+}
 
 /* Profile editor actions */
 .profile-editor-actions {

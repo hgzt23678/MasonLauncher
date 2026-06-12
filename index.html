@@ -13,32 +13,32 @@
           <span></span><span></span><span></span><span></span>
         </div>
         <nav class="sidebar-nav" aria-label="メインメニュー">
-          <button class="nav-button active" type="button" aria-label="ホーム">
+          <md-icon-button class="nav-icon-btn" data-active="true" type="button" aria-label="ホーム">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>
             </svg>
-          </button>
-          <button class="nav-button" id="profiles-nav" type="button" aria-label="プロファイル">
+          </md-icon-button>
+          <md-icon-button class="nav-icon-btn" id="profiles-nav" type="button" aria-label="プロファイル">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/>
               <rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/>
             </svg>
-          </button>
-          <button class="nav-button" id="open-folder-nav" type="button" aria-label="ゲームフォルダー">
+          </md-icon-button>
+          <md-icon-button class="nav-icon-btn" id="open-folder-nav" type="button" aria-label="ゲームフォルダー">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M3 6h7l2 2h9v10H3z"/>
             </svg>
-          </button>
-          <button class="nav-button" id="refresh-nav" type="button" aria-label="再スキャン">
+          </md-icon-button>
+          <md-icon-button class="nav-icon-btn" id="refresh-nav" type="button" aria-label="再スキャン">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M19 7v5h-5M5 17v-5h5M7.2 8.2A6.5 6.5 0 0 1 18 10M16.8 15.8A6.5 6.5 0 0 1 6 14"/>
             </svg>
-          </button>
-          <button class="nav-button" id="settings-nav" type="button" aria-label="設定">
+          </md-icon-button>
+          <md-icon-button class="nav-icon-btn" id="settings-nav" type="button" aria-label="設定">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zM19 12l2-1-2-3-2 .5-1.5-1L15 5h-6l-.5 2.5-1.5 1L5 8l-2 3 2 1v2l-2 1 2 3 2-.5 1.5 1L9 21h6l.5-2.5 1.5-1 2 .5 2-3-2-1z"/>
             </svg>
-          </button>
+          </md-icon-button>
         </nav>
         <div class="sidebar-status" title="ランチャー稼働中">
           <span></span>
@@ -58,10 +58,10 @@
             </div>
           </div>
           <div class="topbar-actions">
-            <button class="account-button" id="account-button" type="button">
-              <span class="account-avatar" id="account-avatar">?</span>
+            <md-outlined-button id="account-button" class="account-btn" type="button">
+              <span class="account-avatar" id="account-avatar" slot="icon">?</span>
               <span id="account-label">Microsoftでログイン</span>
-            </button>
+            </md-outlined-button>
           </div>
         </header>
 

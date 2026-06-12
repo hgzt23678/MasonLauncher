@@ -86,8 +86,12 @@ const defaultGameDirectory = () => {
 const settingsFile = () =>
   path.join(app.getPath('userData'), 'launcher-settings.json');
 
+// New instances use an isolated directory under Electron userData so that the
+// shared Minecraft cache (.minecraft or settings.gameDirectory) is never the
+// game working directory.  The `instance/` leaf is the actual --gameDir value;
+// the parent directory can hold per-instance metadata later.
 const defaultInstanceDir = (profileId: string) =>
-  path.join(defaultGameDirectory(), 'simple-craft', 'profiles', profileId);
+  path.join(app.getPath('userData'), 'instances', profileId, 'instance');
 
 const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
@@ -724,6 +728,35 @@ const registerIpcHandlers = () => {
     return error
       ? { ok: false, message: error }
       : { ok: true, message: 'ゲームフォルダーを開きました。' };
+  });
+
+  ipcMain.handle('launcher:open-instance-folder', async (_event, profileId: unknown) => {
+    if (typeof profileId !== 'string') {
+      throw new Error('プロファイル指定が不正です。');
+    }
+    const settings = await readSettings();
+    const profile = findProfileOrThrow(settings, profileId);
+    const instanceDir = resolveInstanceDirectory(settings.gameDirectory, profile);
+    await fs.mkdir(instanceDir, { recursive: true });
+    const error = await shell.openPath(instanceDir);
+    return error
+      ? { ok: false, message: error }
+      : { ok: true, message: 'インスタンスフォルダを開きました。' };
+  });
+
+  ipcMain.handle('launcher:open-instance-logs', async (_event, profileId: unknown) => {
+    if (typeof profileId !== 'string') {
+      throw new Error('プロファイル指定が不正です。');
+    }
+    const settings = await readSettings();
+    const profile = findProfileOrThrow(settings, profileId);
+    const instanceDir = resolveInstanceDirectory(settings.gameDirectory, profile);
+    const logsDir = path.join(instanceDir, 'logs');
+    await fs.mkdir(logsDir, { recursive: true });
+    const error = await shell.openPath(logsDir);
+    return error
+      ? { ok: false, message: error }
+      : { ok: true, message: 'ログフォルダを開きました。' };
   });
 
   ipcMain.handle('launcher:save-settings', async (_event, input: unknown) => {

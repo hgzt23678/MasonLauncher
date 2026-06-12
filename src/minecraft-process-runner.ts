@@ -161,8 +161,7 @@ export class MinecraftProcessRunner {
         .toString()
         .split(/\r?\n/)
         .map((line) => line.trim())
-        .filter(Boolean)
-        .slice(0, 50);
+        .filter(Boolean);
       for (const line of lines) {
         this.log(level, 'process', line, { stream });
       }
@@ -174,10 +173,15 @@ export class MinecraftProcessRunner {
       forward('warn', 'stderr', chunk),
     );
 
+    let windowEverAppeared = false;
+    const spawnedAt = Date.now();
+
     const watcher = createMinecraftProcessWatcher(processHandle);
     watcher.on('minecraft-window-ready', () => {
+      windowEverAppeared = true;
       this.log('info', 'process', 'Minecraftウィンドウの準備を検出しました。', {
         pid: processHandle.pid ?? null,
+        elapsedMs: Date.now() - spawnedAt,
       });
       callbacks.onState({
         running: true,
@@ -189,18 +193,31 @@ export class MinecraftProcessRunner {
       'minecraft-exit',
       ({ code, signal, crashReportLocation }) => {
         this.processHandle = undefined;
-        const crashed = code !== 0;
+        const elapsed = Date.now() - spawnedAt;
+        // Treat as crash when: non-zero code, killed by signal, or exited in
+        // under 15 seconds without ever showing a window (silent failure).
+        const abnormalCode = code !== 0 && code !== null;
+        const killedBySignal = code === null && signal != null;
+        const quickSilentExit = !windowEverAppeared && elapsed < 15_000;
+        const crashed = abnormalCode || killedBySignal || quickSilentExit;
+        const logMessage = abnormalCode
+          ? `Minecraftが異常終了しました（コード ${code}）。`
+          : killedBySignal
+            ? `Minecraftがシグナル ${signal} で終了しました。`
+            : quickSilentExit
+              ? 'Minecraftがウィンドウを表示せずに即終了しました。起動失敗の可能性があります。ランチャーログを確認してください。'
+              : 'Minecraftが正常終了しました。';
         this.log(
           crashed ? 'error' : 'info',
           'process',
-          crashed
-            ? 'Minecraftが異常終了しました。'
-            : 'Minecraftが正常終了しました。',
+          logMessage,
           {
             pid: processHandle.pid ?? null,
             exitCode: code,
             signal: signal || null,
             crashReportLocation: crashReportLocation || null,
+            elapsedMs: elapsed,
+            windowEverAppeared,
           },
         );
         callbacks.onState({
@@ -208,9 +225,7 @@ export class MinecraftProcessRunner {
           code,
           signal: signal || null,
           category: crashed ? 'crash' : undefined,
-          message: crashed
-            ? `Minecraftがコード ${code} で終了しました。`
-            : 'Minecraftを終了しました。',
+          message: crashed ? logMessage : 'Minecraftを終了しました。',
           crashReportLocation,
         });
       },

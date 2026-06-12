@@ -367,6 +367,8 @@ const api = window.launcher ?? {
   clearLogs: async (): Promise<LauncherLogEntry[]> => [],
   chooseDirectory: async () => demoState,
   openDirectory: demoAction,
+  openInstanceFolder: demoAction,
+  openInstanceLogs: demoAction,
   saveSettings: async (settings: Record<string, unknown>) => {
     if (typeof settings.minMemory === 'number') {
       demoState.settings.minMemory = settings.minMemory;
@@ -498,11 +500,11 @@ const byId = <T extends HTMLElement>(id: string) =>
 // Main area
 const scanStatus = byId<HTMLElement>('scan-status');
 const toast = byId<HTMLElement>('toast');
-const openFolderNav = byId<HTMLButtonElement>('open-folder-nav');
-const refreshNav = byId<HTMLButtonElement>('refresh-nav');
-const settingsNav = byId<HTMLButtonElement>('settings-nav');
-const profilesNav = byId<HTMLButtonElement>('profiles-nav');
-const accountButton = byId<HTMLButtonElement>('account-button');
+const openFolderNav = byId<HTMLElement>('open-folder-nav');
+const refreshNav = byId<HTMLElement>('refresh-nav');
+const settingsNav = byId<HTMLElement>('settings-nav');
+const profilesNav = byId<HTMLElement>('profiles-nav');
+const accountButton = byId<HTMLElement>('account-button');
 const accountAvatar = byId<HTMLElement>('account-avatar');
 const accountLabel = byId<HTMLElement>('account-label');
 const profileGrid = byId<HTMLElement>('profile-grid');
@@ -836,7 +838,31 @@ const createProfileCard = (profile: LaunchProfile) => {
     '<path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/>';
   editBtn.append(editSvg);
 
-  actions.append(playBtn, editBtn);
+  const folderBtn = document.createElement('md-icon-button') as HTMLElement;
+  folderBtn.dataset.action = 'open-folder';
+  folderBtn.setAttribute('type', 'button');
+  folderBtn.setAttribute('aria-label', 'インスタンスフォルダを開く');
+  const folderSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  folderSvg.setAttribute('viewBox', '0 0 24 24');
+  folderSvg.setAttribute('width', '20');
+  folderSvg.setAttribute('height', '20');
+  folderSvg.setAttribute('fill', 'currentColor');
+  folderSvg.innerHTML = '<path d="M10 4H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-2z"/>';
+  folderBtn.append(folderSvg);
+
+  const logsBtn = document.createElement('md-icon-button') as HTMLElement;
+  logsBtn.dataset.action = 'open-logs';
+  logsBtn.setAttribute('type', 'button');
+  logsBtn.setAttribute('aria-label', 'ログフォルダを開く');
+  const logsSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  logsSvg.setAttribute('viewBox', '0 0 24 24');
+  logsSvg.setAttribute('width', '20');
+  logsSvg.setAttribute('height', '20');
+  logsSvg.setAttribute('fill', 'currentColor');
+  logsSvg.innerHTML = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM8 13h8v2H8v-2zm0-4h5v2H8V9zm0 8h8v2H8v-2z"/>';
+  logsBtn.append(logsSvg);
+
+  actions.append(playBtn, editBtn, folderBtn, logsBtn);
   card.append(art, body, actions);
   return card;
 };
@@ -1066,9 +1092,7 @@ const renderSelectedMods = (profile: LaunchProfile | undefined) => {
     }
     const name = document.createElement('strong');
     name.textContent = mod.title;
-    const remove = document.createElement('button');
-    remove.type = 'button';
-    remove.className = 'mod-remove-button';
+    const remove = document.createElement('md-text-button') as unknown as HTMLButtonElement;
     remove.dataset.projectId = mod.projectId;
     remove.textContent = '削除';
     row.append(icon, name, remove);
@@ -1127,9 +1151,7 @@ const renderJavaRuntimeList = () => {
     info.append(title, meta, pathLine);
     row.append(info);
     if (runtime.source === 'managed' || runtime.source === 'custom') {
-      const remove = document.createElement('button');
-      remove.type = 'button';
-      remove.className = 'mod-remove-button';
+      const remove = document.createElement('md-text-button') as unknown as HTMLButtonElement;
       remove.dataset.javaRuntimeId = runtime.id;
       remove.textContent = '削除';
       row.append(remove);
@@ -1455,9 +1477,7 @@ const renderModSearchResults = (projects: ModrinthProject[]) => {
     const downloads = document.createElement('small');
     downloads.textContent = `${project.downloads.toLocaleString()} downloads`;
     copy.append(title, description, downloads);
-    const add = document.createElement('button');
-    add.type = 'button';
-    add.className = 'secondary-button';
+    const add = document.createElement('md-outlined-button') as unknown as HTMLButtonElement;
     add.dataset.project = JSON.stringify(project);
     const installed = installedIds.has(project.projectId);
     add.disabled = installed;
@@ -1526,6 +1546,24 @@ profileGrid?.addEventListener('click', async (event) => {
   }
   if (button.dataset.action === 'launch') {
     void handleProfileLaunch(profile);
+    return;
+  }
+  if (button.dataset.action === 'open-folder') {
+    try {
+      const result = await api.openInstanceFolder(profile.id);
+      showToast(result.message, !result.ok);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'フォルダを開けませんでした。', true);
+    }
+    return;
+  }
+  if (button.dataset.action === 'open-logs') {
+    try {
+      const result = await api.openInstanceLogs(profile.id);
+      showToast(result.message, !result.ok);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'ログフォルダを開けませんでした。', true);
+    }
     return;
   }
 });
@@ -1635,7 +1673,7 @@ modSearchInput?.addEventListener('keydown', (event) => {
 
 modSearchResults?.addEventListener('click', async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-project]',
+    '[data-project]',
   );
   const profileId = profileIdInput?.value;
   if (!button?.dataset.project || !profileId) return;
@@ -1660,7 +1698,7 @@ modSearchResults?.addEventListener('click', async (event) => {
 
 selectedModList?.addEventListener('click', async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-project-id]',
+    '[data-project-id]',
   );
   const profileId = profileIdInput?.value;
   if (!button?.dataset.projectId || !profileId) return;
@@ -1987,7 +2025,7 @@ javaInstallButton?.addEventListener('click', async () => {
 
 javaRuntimeList?.addEventListener('click', async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
-    'button[data-java-runtime-id]',
+    '[data-java-runtime-id]',
   );
   if (!button?.dataset.javaRuntimeId) return;
   button.disabled = true;

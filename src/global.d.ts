@@ -270,6 +270,8 @@ declare global {
       clearLogs: () => Promise<LauncherLogEntry[]>;
       chooseDirectory: () => Promise<LauncherState>;
       openDirectory: () => Promise<ActionResult>;
+      openInstanceFolder: (profileId: string) => Promise<ActionResult>;
+      openInstanceLogs: (profileId: string) => Promise<ActionResult>;
       saveSettings: (
         settings: Record<string, unknown>,
       ) => Promise<LauncherState>;

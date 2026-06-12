@@ -281,6 +281,20 @@ export class MinecraftLaunchResolver {
       cwd: input.gamePath,
       sessionMode: input.session.mode,
     });
+    // Diagnostic log: full launch parameters for troubleshooting exit-code-0 issues.
+    this.log('info', 'arguments', 'Minecraft起動パラメータ（診断）', {
+      javaExecutable: command,
+      javaVersion,
+      mainClass: version.mainClass,
+      gamePath: input.gamePath,
+      resourcePath: input.resourcePath,
+      nativesDirectory,
+      assetsDir: path.join(input.resourcePath, 'assets'),
+      assetIndex: version.assetIndex?.id ?? null,
+      loggingConfigArg: version.logging?.client?.argument ?? null,
+      classpathEntries,
+      totalArgs: args.length,
+    });
     return {
       command,
       args,

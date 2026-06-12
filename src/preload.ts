@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('launcher', {
   clearLogs: () => ipcRenderer.invoke('launcher:clear-logs'),
   chooseDirectory: () => ipcRenderer.invoke('launcher:choose-directory'),
   openDirectory: () => ipcRenderer.invoke('launcher:open-directory'),
+  openInstanceFolder: (profileId: string) =>
+    ipcRenderer.invoke('launcher:open-instance-folder', profileId),
+  openInstanceLogs: (profileId: string) =>
+    ipcRenderer.invoke('launcher:open-instance-logs', profileId),
   saveSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('launcher:save-settings', settings),
   saveProfile: (profile: Record<string, unknown>) =>
