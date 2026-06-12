@@ -14,6 +14,7 @@ import {
 } from '../src/minecraft-launch-resolver';
 import { MinecraftProcessRunner } from '../src/minecraft-process-runner';
 import { MinecraftError } from '../src/minecraft-errors';
+import type { MinecraftWindowProbe } from '../src/minecraft-window-probe';
 
 test('Java未検出をjavaカテゴリとして返す', async () => {
   const resolver = new MinecraftLaunchResolver();
@@ -255,6 +256,11 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
   );
   const states: Array<{ running: boolean; category?: string }> = [];
   const launcherLogPath = path.join(root, 'launcher.log');
+  await fs.mkdir(path.join(root, 'logs'), { recursive: true });
+  await fs.writeFile(
+    path.join(root, 'logs', 'latest.log'),
+    'Authorization: Bearer latest-log-secret\n',
+  );
   runner.run(
     {
       command: 'java',
@@ -284,6 +290,14 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
     },
     { onState: (state) => states.push(state) },
   );
+  child.stdout?.emit(
+    'data',
+    Buffer.from('access_token=stdout-secret-token\n'),
+  );
+  child.stderr?.emit(
+    'data',
+    Buffer.from('session=stderr-secret-token\n'),
+  );
   now += 16_000;
   child.emit('exit', 0, null);
   for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
@@ -293,8 +307,241 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
   assert.equal(states.at(-1)?.running, false);
   assert.equal(states.at(-1)?.category, 'crash');
   const log = await fs.readFile(launcherLogPath, 'utf8');
-  assert.match(log, /"windowEverAppeared":false/);
+  assert.match(log, /"windowConfirmed":false/);
   assert.match(log, /"elapsedMs":16000/);
   assert.doesNotMatch(log, /top-secret-token/);
+  assert.doesNotMatch(log, /latest-log-secret/);
+  assert.doesNotMatch(log, /stdout-secret-token/);
+  assert.doesNotMatch(log, /stderr-secret-token/);
   assert.match(log, /\[REDACTED\]/);
+});
+
+test('XMCL init log does not count as a confirmed Minecraft window', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-process-log-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, {
+    pid: 4322,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+  });
+  const noWindowProbe: MinecraftWindowProbe = async (rootPid) => ({
+    supported: true,
+    rootPid,
+    checkedAt: new Date().toISOString(),
+    candidates: [],
+  });
+  const states: Array<{
+    running: boolean;
+    category?: string;
+    message: string;
+  }> = [];
+  const launcherLogPath = path.join(root, 'launcher.log');
+  const runner = new MinecraftProcessRunner(
+    () => undefined,
+    () => child,
+    Date.now,
+    noWindowProbe,
+  );
+  runner.run(
+    {
+      command: 'java',
+      args: ['-cp', 'client.jar', 'net.minecraft.client.main.Main'],
+      cwd: root,
+      metadata: {
+        instanceId: 'test-instance',
+        versionId: '1.12.2',
+        javaPath: 'java',
+        javaMajor: 8,
+        javaArch: 'x64',
+        gameDir: root,
+        assetsDir: path.join(root, 'assets'),
+        nativesDir: path.join(root, 'natives'),
+        mainClass: 'net.minecraft.client.main.Main',
+        classpathEntries: 1,
+        argumentCount: 3,
+        latestLogPath: path.join(root, 'logs', 'latest.log'),
+        launcherLogPath,
+      },
+    },
+    { onState: (state) => states.push(state) },
+  );
+  child.stdout?.emit('data', Buffer.from('LWJGL Version: 2.9.4\n'));
+  child.emit('exit', 0, null);
+  for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.match(
+    states.find((state) => state.running && state.message.includes('初期化ログ'))
+      ?.message ?? '',
+    /画面表示は未確認/,
+  );
+  assert.equal(states.at(-1)?.category, 'window-unverified');
+  assert.doesNotMatch(
+    states.map((state) => state.message).join('\n'),
+    /Minecraft画面を確認しました/,
+  );
+  const log = await fs.readFile(launcherLogPath, 'utf8');
+  assert.match(log, /"event":"client-init-log"/);
+  assert.match(log, /LWJGL Version: 2\.9\.4/);
+  assert.match(log, /"windowConfirmed":false/);
+});
+
+test('a verified visible window is the only event that confirms the screen', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-process-log-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, {
+    pid: 4323,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+  });
+  const visibleWindowProbe: MinecraftWindowProbe = async (rootPid) => ({
+    supported: true,
+    rootPid,
+    checkedAt: new Date().toISOString(),
+    candidates: [{
+      pid: rootPid,
+      pidInTree: true,
+      handle: 100,
+      title: 'Minecraft 1.20.1',
+      visible: true,
+      minimized: false,
+      ownerHandle: 0,
+      bounds: { x: 100, y: 100, width: 1280, height: 720 },
+      intersectsVirtualScreen: true,
+    }],
+  });
+  const states: Array<{
+    running: boolean;
+    category?: string;
+    message: string;
+  }> = [];
+  let now = Date.parse('2026-01-01T00:00:00.000Z');
+  const runner = new MinecraftProcessRunner(
+    () => undefined,
+    () => child,
+    () => now,
+    visibleWindowProbe,
+  );
+  runner.run(
+    {
+      command: 'java',
+      args: ['-cp', 'client.jar', 'net.minecraft.client.main.Main'],
+      cwd: root,
+      metadata: {
+        instanceId: 'test-instance',
+        versionId: '1.20.1',
+        javaPath: 'java',
+        javaMajor: 17,
+        javaArch: 'x64',
+        gameDir: root,
+        assetsDir: path.join(root, 'assets'),
+        nativesDir: path.join(root, 'natives'),
+        mainClass: 'net.minecraft.client.main.Main',
+        classpathEntries: 1,
+        argumentCount: 3,
+        latestLogPath: path.join(root, 'logs', 'latest.log'),
+        launcherLogPath: path.join(root, 'launcher.log'),
+      },
+    },
+    { onState: (state) => states.push(state) },
+  );
+  for (
+    let attempt = 0;
+    attempt < 100 &&
+    !states.some((state) => state.message === 'Minecraft画面を確認しました。');
+    attempt += 1
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  now += 5_000;
+  child.emit('exit', 0, null);
+  for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.ok(
+    states.some((state) => state.message === 'Minecraft画面を確認しました。'),
+  );
+  assert.equal(states.at(-1)?.category, undefined);
+});
+
+test('a window that disappears immediately is not treated as a successful launch', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-process-log-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, {
+    pid: 4324,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+  });
+  const visibleWindowProbe: MinecraftWindowProbe = async (rootPid) => ({
+    supported: true,
+    rootPid,
+    checkedAt: new Date().toISOString(),
+    candidates: [{
+      pid: rootPid,
+      pidInTree: true,
+      handle: 101,
+      title: 'Minecraft',
+      visible: true,
+      minimized: false,
+      ownerHandle: 0,
+      bounds: { x: 10, y: 10, width: 800, height: 600 },
+      intersectsVirtualScreen: true,
+    }],
+  });
+  let now = Date.parse('2026-01-01T00:00:00.000Z');
+  const states: Array<{
+    running: boolean;
+    category?: string;
+    message: string;
+  }> = [];
+  const runner = new MinecraftProcessRunner(
+    () => undefined,
+    () => child,
+    () => now,
+    visibleWindowProbe,
+  );
+  runner.run(
+    {
+      command: 'java',
+      args: ['net.minecraft.client.main.Main'],
+      cwd: root,
+      metadata: {
+        instanceId: 'test-instance',
+        versionId: '1.20.1',
+        javaPath: 'java',
+        javaMajor: 17,
+        javaArch: 'x64',
+        gameDir: root,
+        assetsDir: path.join(root, 'assets'),
+        nativesDir: path.join(root, 'natives'),
+        mainClass: 'net.minecraft.client.main.Main',
+        classpathEntries: 1,
+        argumentCount: 1,
+        latestLogPath: path.join(root, 'logs', 'latest.log'),
+        launcherLogPath: path.join(root, 'launcher.log'),
+      },
+    },
+    { onState: (state) => states.push(state) },
+  );
+  for (
+    let attempt = 0;
+    attempt < 100 &&
+    !states.some((state) => state.message === 'Minecraft画面を確認しました。');
+    attempt += 1
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  now += 1_000;
+  child.emit('exit', 0, null);
+  for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.equal(states.at(-1)?.category, 'crash');
+  assert.match(states.at(-1)?.message ?? '', /直後にプロセスが終了/);
 });

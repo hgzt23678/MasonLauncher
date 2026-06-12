@@ -10,6 +10,7 @@ export type MinecraftErrorCategory =
   | 'arguments'
   | 'spawn'
   | 'crash'
+  | 'window-unverified'
   | 'forge-installer'
   | 'forge-profile'
   | 'forge-version-json'

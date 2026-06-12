@@ -222,6 +222,7 @@ const failureLabels: Record<string, string> = {
   arguments: '起動引数生成失敗',
   spawn: 'プロセス起動失敗',
   crash: 'Minecraftクラッシュ',
+  'window-unverified': 'Minecraft画面未確認',
   'forge-installer': 'Forge installer取得失敗',
   'forge-profile': 'Forge install_profile解析失敗',
   'forge-version-json': 'Forge version JSON抽出失敗',
@@ -2121,7 +2122,9 @@ api.onProcessState((payload) => {
     (payload.category === 'crash' ||
       payload.category === 'spawn' ||
       (typeof payload.code === 'number' && payload.code !== 0));
-  if (isCrash) {
+  const isWindowUnverified =
+    !running && payload.category === 'window-unverified';
+  if (isCrash || isWindowUnverified) {
     // Refresh logs so the Java stderr is immediately visible in the settings panel.
     void refreshDeveloperLogs();
   }
@@ -2129,6 +2132,8 @@ api.onProcessState((payload) => {
     showToast(
       isCrash
         ? `${formatCategorizedMessage(message, payload.category)} — 設定パネルのログで詳細を確認できます。`
+        : isWindowUnverified
+          ? `${formatCategorizedMessage(message, payload.category)} — インスタンス起動ログとlatest.logを確認してください。`
         : formatCategorizedMessage(message, payload.category),
       isCrash,
     );
