@@ -84,6 +84,59 @@ export const resolveMicrosoftLaunchPlaceholders = (
   );
 };
 
+export const insertExtraJvmArguments = (
+  args: string[],
+  mainClass: string,
+  extraJvmArgs: readonly string[],
+) => {
+  const normalized = extraJvmArgs.filter((argument) => argument.trim());
+  if (normalized.length === 0) return;
+
+  const mainClassIndex = args.indexOf(mainClass);
+  if (mainClassIndex < 0) {
+    throw new MinecraftError(
+      `追加JVM引数の挿入先となるmainClassが見つかりません: ${mainClass}`,
+      'arguments',
+      'JVM_ARGS_INSERTION_FAILED',
+      { mainClass },
+    );
+  }
+  args.splice(mainClassIndex, 0, ...normalized);
+};
+
+export const assertGameDirArgument = (
+  args: readonly string[],
+  expectedGameDir: string,
+) => {
+  const flagIndex = args.indexOf('--gameDir');
+  const inlineArgument = args.find((argument) =>
+    argument.startsWith('--gameDir='),
+  );
+  const actualGameDir =
+    flagIndex >= 0 ? args[flagIndex + 1] : inlineArgument?.slice(10);
+  if (!actualGameDir?.trim()) {
+    throw new MinecraftError(
+      'Minecraft起動引数に--gameDirがありません。',
+      'arguments',
+      'GAME_DIR_ARGUMENT_MISSING',
+      { expectedGameDir },
+    );
+  }
+
+  const normalize = (value: string) => {
+    const resolved = path.resolve(value);
+    return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+  };
+  if (normalize(actualGameDir) !== normalize(expectedGameDir)) {
+    throw new MinecraftError(
+      'Minecraft起動引数の--gameDirがプロファイルのinstanceDirと一致しません。',
+      'arguments',
+      'GAME_DIR_ARGUMENT_MISMATCH',
+      { expectedGameDir, actualGameDir },
+    );
+  }
+};
+
 const readJavaVersion = async (javaPath: string) => {
   const probe =
     process.platform === 'win32' &&
@@ -204,15 +257,12 @@ export class MinecraftLaunchResolver {
     const [command, ...args] = generated;
     // Profile-level extra JVM arguments go right before the main class so
     // they participate in JVM startup without disturbing game arguments.
-    const extraJvmArgs = (input.settings.jvmArgs ?? []).filter((argument) =>
-      argument.trim(),
+    insertExtraJvmArguments(
+      args,
+      version.mainClass,
+      input.settings.jvmArgs ?? [],
     );
-    if (extraJvmArgs.length > 0) {
-      const mainClassIndex = args.indexOf(version.mainClass);
-      if (mainClassIndex >= 0) {
-        args.splice(mainClassIndex, 0, ...extraJvmArgs);
-      }
-    }
+    assertGameDirArgument(args, input.gamePath);
     if (!command || args.length === 0) {
       throw new MinecraftError(
         'Minecraft起動コマンドまたは引数が空です。',

@@ -7,6 +7,7 @@ import { generateArguments, type ResolvedVersion } from '@xmcl/core';
 import {
   buildLaunchOptions,
   createObservedSpawn,
+  normalizeLaunchProfileVersion,
   parseVersionManifest,
   resolveJavaExecutable,
   resolveLibraryPath,
@@ -103,6 +104,87 @@ test('ライブラリパスをゲームディレクトリ配下へ固定する',
     () => resolveLibraryPath(gameDirectory, '../outside.jar'),
     /ゲームディレクトリ外/,
   );
+});
+
+test('Forge継承versionを検出して冗長フィールドを同期する', () => {
+  const normalized = normalizeLaunchProfileVersion(
+    {
+      versionId: '1.20.1-forge-47.2.0',
+      minecraftVersion: 'stale',
+      resolvedVersionId: 'stale',
+      loader: 'vanilla',
+      loaderType: 'vanilla',
+      profileType: 'vanilla',
+      loaderVersion: null,
+    },
+    {
+      id: '1.20.1-forge-47.2.0',
+      inheritsFrom: '1.20.1',
+    },
+  );
+
+  assert.deepEqual(normalized, {
+    versionId: '1.20.1',
+    minecraftVersion: '1.20.1',
+    resolvedVersionId: '1.20.1-forge-47.2.0',
+    loader: 'forge',
+    loaderType: 'forge',
+    profileType: 'forge',
+    loaderVersion: '47.2.0',
+  });
+});
+
+test('Vanilla profileはversionを維持して冗長フィールドを同期する', () => {
+  const normalized = normalizeLaunchProfileVersion(
+    {
+      versionId: '1.21.1',
+      minecraftVersion: 'stale',
+      resolvedVersionId: 'stale',
+      loader: 'vanilla',
+      loaderType: 'forge',
+      profileType: 'forge',
+      loaderVersion: 'stale',
+    },
+    {
+      id: '1.21.1',
+      inheritsFrom: null,
+    },
+  );
+
+  assert.deepEqual(normalized, {
+    versionId: '1.21.1',
+    minecraftVersion: '1.21.1',
+    resolvedVersionId: '1.21.1',
+    loader: 'vanilla',
+    loaderType: 'vanilla',
+    profileType: 'vanilla',
+    loaderVersion: null,
+  });
+});
+
+test('inheritsFromなしの明示Forge profileは設定済みloader情報を維持する', () => {
+  const normalized = normalizeLaunchProfileVersion(
+    {
+      versionId: '1.20.1',
+      minecraftVersion: '1.20.1',
+      resolvedVersionId: 'stale',
+      loader: 'forge',
+      loaderType: 'vanilla',
+      profileType: 'vanilla',
+      loaderVersion: '47.2.0',
+    },
+    undefined,
+  );
+
+  assert.deepEqual(normalized, {
+    versionId: '1.20.1',
+    minecraftVersion: '1.20.1',
+    resolvedVersionId: '1.20.1-forge-47.2.0',
+    loader: 'forge',
+    loaderType: 'forge',
+    profileType: 'forge',
+    loaderVersion: '47.2.0',
+  });
 });
 
 test('オンラインセッションから起動引数を生成する', async () => {

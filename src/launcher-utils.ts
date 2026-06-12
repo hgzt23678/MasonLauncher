@@ -56,6 +56,60 @@ export type ParsedManifestVersion = {
   releaseTime: string;
 };
 
+export type LaunchProfileVersionFields = {
+  versionId: string;
+  minecraftVersion: string;
+  resolvedVersionId: string;
+  loader: 'vanilla' | 'forge';
+  loaderType: 'vanilla' | 'forge';
+  profileType: 'vanilla' | 'forge';
+  loaderVersion: string | null;
+};
+
+export type InstalledVersionIdentity = {
+  id: string;
+  inheritsFrom: string | null;
+};
+
+export const normalizeLaunchProfileVersion = <
+  T extends LaunchProfileVersionFields,
+>(
+  profile: T,
+  installedVersion?: InstalledVersionIdentity,
+): T => {
+  const detectedForge =
+    Boolean(installedVersion?.inheritsFrom) &&
+    /(?:^|[-_.])forge(?:[-_.]|$)/i.test(installedVersion?.id ?? '');
+  const loader = detectedForge ? 'forge' : profile.loader;
+  const versionId = detectedForge
+    ? installedVersion?.inheritsFrom ?? profile.versionId
+    : profile.versionId || profile.minecraftVersion;
+  const detectedLoaderVersion = detectedForge
+    ? installedVersion?.id.match(/-forge-(.+)$/i)?.[1] ?? null
+    : null;
+  const loaderVersion =
+    loader === 'forge'
+      ? detectedLoaderVersion ?? profile.loaderVersion
+      : null;
+  const resolvedVersionId =
+    detectedForge && installedVersion
+      ? installedVersion.id
+      : loader === 'forge' && loaderVersion
+        ? `${versionId}-forge-${loaderVersion}`
+        : versionId;
+
+  return {
+    ...profile,
+    versionId,
+    minecraftVersion: versionId,
+    resolvedVersionId,
+    loader,
+    loaderType: loader,
+    profileType: loader,
+    loaderVersion,
+  };
+};
+
 export const parseVersionManifest = (input: unknown) => {
   if (!input || typeof input !== 'object') {
     throw new Error('Mojang version manifest がオブジェクトではありません。');
