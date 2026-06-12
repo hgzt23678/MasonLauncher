@@ -305,7 +305,7 @@ const demoState: LauncherState = {
       maxMemory: 4096,
       mods: [],
       java: defaultJavaSettings(),
-      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\simple-craft\\profiles\\default-profile',
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\default-profile',
     },
     {
       id: 'forge-profile',
@@ -334,7 +334,7 @@ const demoState: LauncherState = {
         },
       ],
       java: defaultJavaSettings(),
-      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\simple-craft\\profiles\\forge-profile',
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\forge-profile',
     },
   ],
   selectedProfileId: 'forge-profile',

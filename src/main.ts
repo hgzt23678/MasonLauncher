@@ -63,6 +63,10 @@ const diagnostics = new LauncherDiagnostics((entry) => {
 });
 const log = diagnostics.log.bind(diagnostics);
 const modrinthService = new ModrinthService(log);
+const appName = 'Mason Launcher';
+const instanceStorageName = 'mason-launcher';
+const legacyAppDataName = 'Simple Craft Launcher';
+const legacyInstanceStorageName = 'simple-craft';
 
 if (started) {
   app.quit();
@@ -85,6 +89,34 @@ const defaultGameDirectory = () => {
 
 const settingsFile = () =>
   path.join(app.getPath('userData'), 'launcher-settings.json');
+
+const migrateLegacyUserData = async () => {
+  const currentDirectory = app.getPath('userData');
+  const legacyDirectory = path.join(
+    path.dirname(currentDirectory),
+    legacyAppDataName,
+  );
+  const currentSettings = path.join(currentDirectory, 'launcher-settings.json');
+  const legacySettings = path.join(legacyDirectory, 'launcher-settings.json');
+
+  if (
+    currentDirectory === legacyDirectory ||
+    (await pathExists(currentSettings)) ||
+    !(await pathExists(legacySettings))
+  ) {
+    return;
+  }
+
+  await fs.mkdir(currentDirectory, { recursive: true });
+  await fs.cp(legacyDirectory, currentDirectory, {
+    recursive: true,
+    force: false,
+    errorOnExist: false,
+  });
+  log('info', 'settings', '旧アプリ名の設定データを移行しました。', {
+    destination: currentDirectory,
+  });
+};
 
 // New instances use an isolated directory under Electron userData so that the
 // shared Minecraft cache (.minecraft or settings.gameDirectory) is never the
@@ -179,7 +211,12 @@ const readSettings = async (): Promise<LauncherSettings> => {
               typeof (profile as { instanceDir?: unknown }).instanceDir === 'string' &&
               ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
                 ? ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
-                : path.join(baseDir, 'simple-craft', 'profiles', profile.id);
+                : path.join(
+                    baseDir,
+                    legacyInstanceStorageName,
+                    'profiles',
+                    profile.id,
+                  );
             return {
               id: profile.id,
               name: profile.name.trim() || 'プロファイル',
@@ -287,7 +324,12 @@ const resolveInstanceDirectory = (
   profile: LaunchProfile,
 ) =>
   profile.instanceDir ||
-  path.join(gameDirectory, 'simple-craft', 'profiles', profile.id);
+  path.join(
+    gameDirectory,
+    legacyInstanceStorageName,
+    'profiles',
+    profile.id,
+  );
 
 // Maps a profile loader onto a Modrinth loader facet. Vanilla profiles have no
 // mod loader, so they cannot host Modrinth mods.
@@ -861,7 +903,7 @@ const registerIpcHandlers = () => {
         java: javaSettings ?? normalizeJavaSettings(undefined),
         instanceDir: path.join(
           settings.gameDirectory,
-          'simple-craft',
+          instanceStorageName,
           'profiles',
           newId,
         ),
@@ -1369,7 +1411,7 @@ const createWindow = () => {
     minWidth: 900,
     minHeight: 620,
     backgroundColor: '#10150f',
-    title: 'Simple Craft Launcher',
+    title: appName,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1393,6 +1435,15 @@ app.whenReady().then(async () => {
     platform: process.platform,
     arch: process.arch,
   });
+  try {
+    await migrateLegacyUserData();
+  } catch (error) {
+    diagnostics.error(
+      'settings',
+      '旧アプリ名の設定データを移行できませんでした。新しい設定で起動します。',
+      error,
+    );
+  }
   const startupSettings = await readSettings();
   await writeSettings(startupSettings);
   authService = new AuthService(app.getPath('userData'), log);

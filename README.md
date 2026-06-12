@@ -1,31 +1,27 @@
-# Simple Craft Launcher
+# Mason Launcher
 
-Minecraft Java Editionを単体でインストール・起動する、非公式のElectronランチャーです。
-公式Minecraft Launcherは必要ありません。
+Mason Launcher is a clean, instance-based launcher for Minecraft: Java Edition.
+Electron、Vite、TypeScriptで構築された独立した非公式アプリケーションです。
 
 ## Features
 
-- Mojangのバージョンマニフェストからバニラ版を選択
-- クライアント、ライブラリ、ネイティブ、アセットを直接ダウンロード
-- Mojang配布のバージョン別Javaランタイムを自動導入
-- 複数の起動プロファイルをカードグリッドで作成・編集
-- プロファイルごとのVanilla / Forge切り替えとメモリ設定
-- Modrinthから対応MODと必須依存MODを取得し、プロファイル単位で分離
-- Microsoftデバイスコード認証とMinecraft Java Editionの所有権確認
-- 公式メタデータのSHA-1/size検証と原子的ファイル置換
-- 保存済みトークンをOSの暗号化機能で保護
-- メモリ割り当てとゲームディレクトリを設定
-- Javaプロセスを直接起動し、終了状態をランチャーへ通知
+- Vanilla / Forgeプロファイルの作成と管理
+- プロファイルごとに分離されたゲームインスタンス
+- Mojang公式メタデータに基づくクライアント、ライブラリ、assetsの取得と検証
+- Minecraftバージョンに応じたJava/JREの選択と管理
+- Modrinth APIを使用したMOD検索、依存関係解決、インスタンス単位の同期
+- Microsoftデバイスコード認証とMinecraft: Java Editionの所有権確認
+- 起動進捗、Javaプロセス、stdout/stderr、終了状態の表示
+- SHA-1/size検証と原子的ファイル置換
+- OSの暗号化機能を使用した認証キャッシュの保護
 
 ## Microsoft Login
 
-MultiMC / PrismLauncherと同じMicrosoftデバイスコードフローを使用します。
-利用者がクライアントIDを入力する必要はありません。ログインボタンを押すと
+Microsoftのデバイスコード認証フローを使用します。ログイン操作を開始すると、
 アクセス許可コードとMicrosoftの認証ページが表示されます。
 
-ランチャーの配布者は、ランチャー自身のMicrosoft Entraアプリ登録を用意して
-クライアントIDをビルドへ組み込む必要があります。PrismLauncherなど別アプリの
-クライアントIDは使用しません。
+配布者はMason Launcher用のMicrosoft Entraアプリ登録を用意し、
+クライアントIDをビルドへ設定する必要があります。他アプリのクライアントIDは使用しません。
 
 1. [Microsoft Entraのアプリ登録](https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade)を開く。
 2. アカウント種類を`AzureADandPersonalMicrosoftAccount`にする。
@@ -34,10 +30,11 @@ MultiMC / PrismLauncherと同じMicrosoftデバイスコードフローを使用
 
 ### Application IDを設定ファイルで変更する
 
-ビルドし直さずにApplication IDを変更する場合は、ランチャーを終了してから次のファイルを編集します。
+ビルドし直さずにApplication IDを変更する場合は、Mason Launcherを終了してから
+次のファイルを編集します。
 
 ```text
-%APPDATA%\Simple Craft Launcher\launcher-settings.json
+%APPDATA%\Mason Launcher\launcher-settings.json
 ```
 
 `microsoftClientId`へMicrosoft Entraの「アプリケーション (クライアント) ID」を指定します。
@@ -48,9 +45,10 @@ MultiMC / PrismLauncherと同じMicrosoftデバイスコードフローを使用
 }
 ```
 
-次回起動時から設定ファイルの値が`.env`のビルド値より優先されます。Application IDを変更すると、
-別アプリのトークンが混ざらないように保存済みMicrosoft認証キャッシュとMinecraftプロフィールを
-自動削除するため、再ログインが必要です。クライアントシークレットは設定しないでください。
+次回起動時から設定ファイルの値が`.env`のビルド値より優先されます。
+Application IDを変更すると、別アプリのトークンが混ざらないように保存済みの
+Microsoft認証キャッシュとMinecraftプロフィールを削除するため、再ログインが必要です。
+クライアントシークレットは設定しないでください。
 
 公式資料:
 
@@ -76,8 +74,7 @@ npm run make
 - `npm run package`: `out/`へ展開済みアプリを作成
 - `npm run make`: `out/make/`へWindowsインストーラー等を作成
 
-`.env`にクライアントIDがない開発ビルドは起動できますが、Microsoftログインは
-無効になります。
+`.env`にクライアントIDがない開発ビルドは起動できますが、Microsoftログインは無効になります。
 
-このプロジェクトはMojangまたはMicrosoftの公式製品ではありません。プレイには
-Minecraft: Java Editionを所有するMicrosoftアカウントが必要です。
+Mason LauncherはMojangまたはMicrosoftの公式製品ではありません。
+プレイにはMinecraft: Java Editionを所有するMicrosoftアカウントが必要です。

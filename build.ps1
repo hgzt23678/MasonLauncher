@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Simple Craft Launcher - full build script
+    Mason Launcher - full build script
 .DESCRIPTION
     Runs: typecheck -> lint -> test -> package/make
     Stops immediately on any failure.
@@ -62,7 +62,7 @@ function Invoke-Step {
 # ---------------------------------------------------------------------------
 
 Write-Host ""
-Write-Host "Simple Craft Launcher - Build" -ForegroundColor White
+Write-Host "Mason Launcher - Build" -ForegroundColor White
 Write-Host "Target : $Target" -ForegroundColor DarkGray
 Write-Host "Date   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 

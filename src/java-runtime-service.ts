@@ -16,7 +16,7 @@ const execFileAsync = promisify(execFile);
 
 const discoApiBase = 'https://api.foojay.io/disco/v3.0';
 const userAgent =
-  'hgzt23678/SimpleCraftLauncher/1.4.1 (https://github.com/hgzt23678)';
+  'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
 
 type LogWriter = (
   level: LauncherLogLevel,
