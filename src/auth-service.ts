@@ -29,6 +29,21 @@ import {
   type OfflineEligibility,
 } from './offline-auth-cache';
 
+const trustedMicrosoftVerificationUrl = (value: string) => {
+  const url = new URL(value);
+  const trustedHost =
+    url.hostname === 'microsoft.com' ||
+    url.hostname.endsWith('.microsoft.com') ||
+    url.hostname === 'microsoftonline.com' ||
+    url.hostname.endsWith('.microsoftonline.com') ||
+    url.hostname === 'live.com' ||
+    url.hostname.endsWith('.live.com');
+  if (url.protocol !== 'https:' || !trustedHost) {
+    throw new Error('Microsoft verification URL was rejected.');
+  }
+  return url.toString();
+};
+
 const microsoftScopes = ['XboxLive.SignIn', 'XboxLive.offline_access'];
 const xboxUserAuthenticateUrl =
   'https://user.auth.xboxlive.com/user/authenticate';
@@ -912,17 +927,19 @@ export class AuthService {
             'Microsoftから有効なアクセス許可コードが返されませんでした。',
           );
         }
+        const trustedVerificationUri =
+          trustedMicrosoftVerificationUrl(verificationUri);
 
         this.activeDeviceCode = {
           userCode,
-          verificationUri,
+          verificationUri: trustedVerificationUri,
           expiresIn: response.expiresIn,
           expiresAt: Date.now() + response.expiresIn * 1000,
           message: response.message,
         };
         this.log('info', 'auth:microsoft', 'Microsoftデバイスコードを受信しました。', {
           expiresIn: response.expiresIn,
-          verificationHost: new URL(verificationUri).host,
+          verificationHost: new URL(trustedVerificationUri).host,
         });
         this.flowState = {
           status: 'waiting-for-user',
@@ -933,7 +950,17 @@ export class AuthService {
         sender.send('auth:device-code', this.activeDeviceCode);
         sender.send('auth:flow-state', this.flowState);
         setTimeout(() => {
-          void shell.openExternal(verificationUri);
+          void shell.openExternal(trustedVerificationUri).catch((error) => {
+            this.log(
+              'warn',
+              'auth:microsoft',
+              'Microsoft verification page could not be opened.',
+              {
+                message:
+                  error instanceof Error ? error.message : String(error),
+              },
+            );
+          });
         }, 250);
       },
     };

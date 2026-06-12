@@ -1,10 +1,16 @@
 import {
+  createWriteStream,
+  promises as fs,
+  type WriteStream,
+} from 'node:fs';
+import {
   spawn,
   type ChildProcess,
   type SpawnOptions,
 } from 'node:child_process';
 import { createMinecraftProcessWatcher } from '@xmcl/core';
 import {
+  sanitizeDetail,
   sanitizeLogText,
   type LauncherLogLevel,
   type LauncherLogStage,
@@ -37,6 +43,22 @@ export type MinecraftProcessState = {
 
 type ProcessCallbacks = {
   onState: (state: MinecraftProcessState) => void;
+};
+
+export type MinecraftLaunchLogMetadata = {
+  instanceId: string;
+  versionId: string;
+  javaPath: string;
+  javaMajor: number | null;
+  javaArch: string;
+  gameDir: string;
+  assetsDir: string;
+  nativesDir: string;
+  mainClass: string;
+  classpathEntries: number;
+  argumentCount: number;
+  latestLogPath: string;
+  launcherLogPath: string;
 };
 
 const redactArguments = (args: readonly string[]) => {
@@ -101,6 +123,7 @@ export class MinecraftProcessRunner {
       args = [],
       options,
     ) => spawn(command, args, options),
+    private readonly now: () => number = Date.now,
   ) {}
 
   run(
@@ -108,6 +131,7 @@ export class MinecraftProcessRunner {
       command: string;
       args: readonly string[];
       cwd: string;
+      metadata?: MinecraftLaunchLogMetadata;
     },
     callbacks: ProcessCallbacks,
   ) {
@@ -131,6 +155,36 @@ export class MinecraftProcessRunner {
       options,
     });
     const redactedArgs = redactArguments(validated.args);
+    let launchLog: WriteStream | undefined;
+    const writeLaunchLog = (event: string, detail: Record<string, unknown>) => {
+      if (!launchLog) return;
+      launchLog.write(
+        `${JSON.stringify({
+          timestamp: new Date(this.now()).toISOString(),
+          event,
+          ...sanitizeDetail(detail),
+        })}\n`,
+      );
+    };
+    if (request.metadata) {
+      launchLog = createWriteStream(request.metadata.launcherLogPath, {
+        flags: 'a',
+        encoding: 'utf8',
+      });
+      launchLog.on('error', (error) => {
+        this.log('error', 'process', 'Failed to write the instance launch log.', {
+          launcherLogPath: request.metadata?.launcherLogPath,
+          message: error.message,
+        });
+      });
+      writeLaunchLog('launch', {
+        ...request.metadata,
+        command: validated.command,
+        commandLine: [validated.command, ...redactedArgs]
+          .map(quoteForLog)
+          .join(' '),
+      });
+    }
     this.log('info', 'spawn', 'Javaプロセスを起動します。', {
       command: validated.command,
       commandLine: [validated.command, ...redactedArgs]
@@ -148,7 +202,13 @@ export class MinecraftProcessRunner {
         validated.options,
       );
     } catch (error) {
-      throw spawnFailure(error, validated.command);
+      const failure = spawnFailure(error, validated.command);
+      writeLaunchLog('spawn-error', {
+        code: failure.code,
+        message: failure.message,
+      });
+      launchLog?.end();
+      throw failure;
     }
     this.processHandle = processHandle;
 
@@ -164,6 +224,7 @@ export class MinecraftProcessRunner {
         .filter(Boolean);
       for (const line of lines) {
         this.log(level, 'process', line, { stream });
+        writeLaunchLog(stream, { message: line });
       }
     };
     processHandle.stdout?.on('data', (chunk: Buffer) =>
@@ -174,14 +235,19 @@ export class MinecraftProcessRunner {
     );
 
     let windowEverAppeared = false;
-    const spawnedAt = Date.now();
+    const spawnedAt = this.now();
 
     const watcher = createMinecraftProcessWatcher(processHandle);
     watcher.on('minecraft-window-ready', () => {
       windowEverAppeared = true;
+      writeLaunchLog('minecraft-window-ready', {
+        pid: processHandle.pid ?? null,
+        detectedAt: new Date(this.now()).toISOString(),
+        elapsedMs: this.now() - spawnedAt,
+      });
       this.log('info', 'process', 'Minecraftウィンドウの準備を検出しました。', {
         pid: processHandle.pid ?? null,
-        elapsedMs: Date.now() - spawnedAt,
+        elapsedMs: this.now() - spawnedAt,
       });
       callbacks.onState({
         running: true,
@@ -191,22 +257,42 @@ export class MinecraftProcessRunner {
     });
     watcher.on(
       'minecraft-exit',
-      ({ code, signal, crashReportLocation }) => {
+      async ({ code, signal, crashReportLocation }) => {
         this.processHandle = undefined;
-        const elapsed = Date.now() - spawnedAt;
-        // Treat as crash when: non-zero code, killed by signal, or exited in
-        // under 15 seconds without ever showing a window (silent failure).
+        const elapsed = this.now() - spawnedAt;
         const abnormalCode = code !== 0 && code !== null;
         const killedBySignal = code === null && signal != null;
-        const quickSilentExit = !windowEverAppeared && elapsed < 15_000;
-        const crashed = abnormalCode || killedBySignal || quickSilentExit;
+        const windowlessExit = !windowEverAppeared;
+        const crashed = abnormalCode || killedBySignal || windowlessExit;
+        const latestLogPath = request.metadata?.latestLogPath;
+        const latestLog = latestLogPath
+          ? await fs.stat(latestLogPath).then(
+              (stat) => ({
+                path: latestLogPath,
+                exists: stat.isFile(),
+                size: stat.size,
+                modifiedAt: stat.mtime.toISOString(),
+              }),
+              () => ({ path: latestLogPath, exists: false, size: 0 }),
+            )
+          : undefined;
         const logMessage = abnormalCode
           ? `Minecraftが異常終了しました（コード ${code}）。`
           : killedBySignal
             ? `Minecraftがシグナル ${signal} で終了しました。`
-            : quickSilentExit
-              ? 'Minecraftがウィンドウを表示せずに即終了しました。起動失敗の可能性があります。ランチャーログを確認してください。'
+            : windowlessExit
+              ? 'Minecraftがウィンドウを表示せずに終了しました。正常起動ではない可能性が高いため、起動失敗として扱います。'
               : 'Minecraftが正常終了しました。';
+        writeLaunchLog('exit', {
+          pid: processHandle.pid ?? null,
+          exitCode: code,
+          signal: signal || null,
+          elapsedMs: elapsed,
+          windowEverAppeared,
+          crashReportLocation: crashReportLocation || null,
+          latestLog,
+        });
+        launchLog?.end();
         this.log(
           crashed ? 'error' : 'info',
           'process',
@@ -218,6 +304,7 @@ export class MinecraftProcessRunner {
             crashReportLocation: crashReportLocation || null,
             elapsedMs: elapsed,
             windowEverAppeared,
+            latestLog,
           },
         );
         callbacks.onState({
@@ -233,6 +320,11 @@ export class MinecraftProcessRunner {
     watcher.on('error', (error) => {
       this.processHandle = undefined;
       const failure = spawnFailure(error, validated.command);
+      writeLaunchLog('spawn-error', {
+        code: failure.code,
+        message: failure.message,
+      });
+      launchLog?.end();
       this.log('error', 'spawn', failure.message, {
         code: failure.code,
         command: validated.command,
@@ -247,6 +339,7 @@ export class MinecraftProcessRunner {
     this.log('info', 'spawn', 'Javaプロセスを起動しました。', {
       pid: processHandle.pid ?? null,
     });
+    writeLaunchLog('spawn', { pid: processHandle.pid ?? null });
     callbacks.onState({
       running: true,
       pid: processHandle.pid,

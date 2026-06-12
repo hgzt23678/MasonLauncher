@@ -15,8 +15,11 @@ import type {
   LauncherLogStage,
 } from './diagnostics';
 import { ForgeService } from './forge-service';
+import { ensureLauncherLogsDirectory } from './instance-paths';
 import {
   defaultJavaSettings,
+  isJavaArchitectureCompatible,
+  probeJavaExecutable,
   type JavaRuntimeService,
   type ProfileJavaSettings,
 } from './java-runtime-service';
@@ -29,7 +32,10 @@ import {
   toMinecraftError,
   type MinecraftErrorCategory,
 } from './minecraft-errors';
-import { MinecraftLaunchResolver } from './minecraft-launch-resolver';
+import {
+  MinecraftLaunchResolver,
+  parseJavaMajorVersion,
+} from './minecraft-launch-resolver';
 import { MinecraftProcessRunner } from './minecraft-process-runner';
 import {
   resolveJavaExecutable,
@@ -97,6 +103,15 @@ export const isJavaRuntimeManifestComplete = async (
       ) {
         return false;
       }
+      const actualSha1 = createHash('sha1')
+        .update(await fs.readFile(path.join(destination, relativePath)))
+        .digest('hex');
+      if (
+        actualSha1.toLowerCase() !==
+        entry.downloads.raw.sha1.toLowerCase()
+      ) {
+        return false;
+      }
     } catch {
       return false;
     }
@@ -133,7 +148,14 @@ export const repairJavaRuntimeManifestFiles = async (
     const expected = entry.downloads.raw;
     try {
       const stat = await fs.stat(target);
-      if (stat.isFile() && stat.size === expected.size) continue;
+      if (stat.isFile() && stat.size === expected.size) {
+        const actualSha1 = createHash('sha1')
+          .update(await fs.readFile(target))
+          .digest('hex');
+        if (actualSha1.toLowerCase() === expected.sha1.toLowerCase()) {
+          continue;
+        }
+      }
     } catch {
       // Missing files are downloaded below.
     }
@@ -374,12 +396,47 @@ export class MinecraftService {
     const majorVersion = version.javaVersion?.majorVersion ?? 8;
     const runtimeDirectory = path.join(this.runtimeRoot, component);
     const executable = resolveJavaExecutable(runtimeDirectory);
+    const manifestCachePath = path.join(
+      runtimeDirectory,
+      '.mason-runtime-manifest.json',
+    );
+    let manifest: JavaRuntimeManifest | undefined;
     try {
-      await fs.access(executable);
+      manifest = JSON.parse(
+        await fs.readFile(manifestCachePath, 'utf8'),
+      ) as JavaRuntimeManifest;
+    } catch {
+      // The online path refreshes and stores the manifest below.
+    }
+    if (!offlineOnly) {
+      manifest = await this.fetchJavaRuntimeManifest(component);
+      await fs.mkdir(runtimeDirectory, { recursive: true });
+      const temporary = `${manifestCachePath}.tmp-${process.pid}-${randomUUID()}`;
+      try {
+        await fs.writeFile(temporary, JSON.stringify(manifest), 'utf8');
+        await fs.rm(manifestCachePath, { force: true });
+        await fs.rename(temporary, manifestCachePath);
+      } finally {
+        await fs.rm(temporary, { force: true }).catch((): void => undefined);
+      }
+    }
+    if (!manifest) {
+      throw new MinecraftError(
+        `Java runtime manifest is not available locally: ${manifestCachePath}`,
+        'java',
+        'JAVA_RUNTIME_MANIFEST_NOT_FOUND_OFFLINE',
+        { component, majorVersion, executable, manifestCachePath },
+      );
+    }
+    try {
+      if (!(await isJavaRuntimeManifestComplete(runtimeDirectory, manifest))) {
+        throw new Error('Java runtime SHA-1 verification failed.');
+      }
       this.log('info', 'java', 'Java実行ファイルを検出しました。', {
         component,
         majorVersion,
         executable,
+        sha1Verified: true,
       });
       return executable;
     } catch {
@@ -408,7 +465,6 @@ export class MinecraftService {
     }
 
     try {
-      const manifest = await this.fetchJavaRuntimeManifest(component);
       const task = installJavaRuntimeTask({
         destination: runtimeDirectory,
         manifest,
@@ -443,7 +499,17 @@ export class MinecraftService {
         installation,
         repairAfterStall,
       ]);
-      await fs.access(executable);
+      if (!(await isJavaRuntimeManifestComplete(runtimeDirectory, manifest))) {
+        await repairJavaRuntimeManifestFiles(runtimeDirectory, manifest);
+      }
+      if (!(await isJavaRuntimeManifestComplete(runtimeDirectory, manifest))) {
+        throw new MinecraftError(
+          'Java runtime files failed SHA-1 verification after installation.',
+          'java',
+          'JAVA_RUNTIME_INSTALL_VERIFICATION_FAILED',
+          { component, majorVersion, executable },
+        );
+      }
     } catch (error) {
       throw toMinecraftError(
         error,
@@ -584,6 +650,35 @@ export class MinecraftService {
         session.mode === 'authenticated-offline',
         javaOptions,
       );
+      const javaProbe = await probeJavaExecutable(javaPath);
+      const requiredJavaMajor = prepared.version.javaVersion?.majorVersion ?? 8;
+      if (
+        javaProbe.majorVersion !== null &&
+        javaProbe.majorVersion !== requiredJavaMajor
+      ) {
+        throw new MinecraftError(
+          `Selected Java ${javaProbe.majorVersion} does not match required Java ${requiredJavaMajor}.`,
+          'java',
+          'JAVA_VERSION_MISMATCH',
+          {
+            javaPath,
+            actualMajorVersion: javaProbe.majorVersion,
+            requiredMajorVersion: requiredJavaMajor,
+          },
+        );
+      }
+      if (!isJavaArchitectureCompatible(process.arch, javaProbe.arch)) {
+        throw new MinecraftError(
+          `Selected Java architecture (${javaProbe.arch}) is incompatible with this system (${process.arch}).`,
+          'java',
+          'JAVA_ARCHITECTURE_MISMATCH',
+          {
+            javaPath,
+            javaArchitecture: javaProbe.arch,
+            hostArchitecture: process.arch,
+          },
+        );
+      }
 
       this.report(sender, {
         phase: 'resolve',
@@ -609,11 +704,41 @@ export class MinecraftService {
         percent: 0,
         message: `${versionId} を起動しています`,
       });
+      const instanceId = (javaOptions.instanceId ?? `direct-${versionId}`)
+        .replace(/[^a-zA-Z0-9-]/g, '-')
+        .slice(0, 100);
+      const launcherLogDirectory = await ensureLauncherLogsDirectory(
+        path.join(path.dirname(this.runtimeRoot), 'instances'),
+        instanceId,
+      );
+      const launcherLogPath = path.join(
+        launcherLogDirectory,
+        `${new Date().toISOString().replace(/[:.]/g, '-')}.log`,
+      );
+      const latestLogPath = path.join(gamePath, 'logs', 'latest.log');
       const processHandle = this.runner.run(
         {
           command: resolved.command,
           args: resolved.args,
           cwd: resolved.cwd,
+          metadata: {
+            instanceId,
+            versionId,
+            javaPath: resolved.command,
+            javaMajor:
+              javaProbe.majorVersion ??
+              parseJavaMajorVersion(resolved.javaVersion) ??
+              null,
+            javaArch: javaProbe.arch ?? 'unknown',
+            gameDir: gamePath,
+            assetsDir: path.join(resourcePath, 'assets'),
+            nativesDir: resolved.nativesDirectory,
+            mainClass: resolved.mainClass,
+            classpathEntries: resolved.classpathEntries,
+            argumentCount: resolved.args.length,
+            latestLogPath,
+            launcherLogPath,
+          },
         },
         {
           onState: (state) => {

@@ -52,7 +52,10 @@ const startServer = async (handler: Handler) => {
 };
 
 const makeService = (baseUrl: string) =>
-  new ModrinthService(() => undefined, { apiBase: `${baseUrl}/v2` });
+  new ModrinthService(() => undefined, {
+    apiBase: `${baseUrl}/v2`,
+    allowInsecureDownloads: true,
+  });
 
 test('searchMods が project_type/loader/version facet を組み立てて整形する', async (t) => {
   let capturedFacets = '';
@@ -404,4 +407,170 @@ test('ネットワーク失敗を network kind として分類する', async () 
     (error: unknown) =>
       error instanceof ModrinthError && error.kind === 'network',
   );
+});
+
+test('downloadVersion rejects non-HTTPS download URLs in production mode', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-modrinth-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const service = new ModrinthService(() => undefined, {
+    fetchImpl: (async () => {
+      throw new Error('fetch must not be reached');
+    }) as typeof fetch,
+  });
+
+  await assert.rejects(
+    service.downloadVersion({
+      instanceDirectory: root,
+      version: {
+        id: 'unsafe',
+        projectId: 'project',
+        name: 'Unsafe',
+        versionNumber: '1',
+        versionType: 'release',
+        gameVersions: ['1.20.1'],
+        loaders: ['fabric'],
+        datePublished: null,
+        dependencies: [],
+        files: [{
+          url: 'http://cdn.modrinth.com/data/project/versions/unsafe/mod.jar',
+          filename: 'mod.jar',
+          primary: true,
+          size: 1,
+          sha1: null,
+          sha512: null,
+        }],
+      },
+      loader: 'fabric',
+      minecraftVersion: '1.20.1',
+    }),
+    (error: unknown) =>
+      error instanceof ModrinthError && error.kind === 'invalid-input',
+  );
+});
+
+test('downloadVersion validates the final redirect host', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-modrinth-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const response = new Response(Buffer.from('jar'));
+  Object.defineProperty(response, 'url', {
+    value: 'https://example.invalid/mod.jar',
+  });
+  const service = new ModrinthService(() => undefined, {
+    fetchImpl: (async () => response) as typeof fetch,
+  });
+
+  await assert.rejects(
+    service.downloadVersion({
+      instanceDirectory: root,
+      version: {
+        id: 'redirected',
+        projectId: 'project',
+        name: 'Redirected',
+        versionNumber: '1',
+        versionType: 'release',
+        gameVersions: ['1.20.1'],
+        loaders: ['fabric'],
+        datePublished: null,
+        dependencies: [],
+        files: [{
+          url: 'https://cdn.modrinth.com/data/project/versions/id/mod.jar',
+          filename: 'mod.jar',
+          primary: true,
+          size: 3,
+          sha1: sha1(Buffer.from('jar')),
+          sha512: null,
+        }],
+      },
+      loader: 'fabric',
+      minecraftVersion: '1.20.1',
+    }),
+    (error: unknown) =>
+      error instanceof ModrinthError && error.kind === 'invalid-input',
+  );
+});
+
+test('downloadVersion rejects declared size mismatches and removes temporary files', async (t) => {
+  const jar = Buffer.from('jar');
+  const server = await startServer((_request, url) =>
+    url.pathname === '/download/mod.jar'
+      ? { body: jar }
+      : { status: 404, json: {} },
+  );
+  t.after(server.close);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-modrinth-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    makeService(server.baseUrl).downloadVersion({
+      instanceDirectory: root,
+      version: {
+        id: 'wrong-size',
+        projectId: 'project',
+        name: 'Wrong size',
+        versionNumber: '1',
+        versionType: 'release',
+        gameVersions: ['1.20.1'],
+        loaders: ['fabric'],
+        datePublished: null,
+        dependencies: [],
+        files: [{
+          url: `${server.baseUrl}/download/mod.jar`,
+          filename: 'mod.jar',
+          primary: true,
+          size: jar.length + 1,
+          sha1: sha1(jar),
+          sha512: null,
+        }],
+      },
+      loader: 'fabric',
+      minecraftVersion: '1.20.1',
+    }),
+    (error: unknown) =>
+      error instanceof ModrinthError && error.kind === 'download-failed',
+  );
+  assert.deepEqual(await fs.readdir(path.join(root, 'mods')), []);
+});
+
+test('downloadVersion normalizes traversal file names into instance mods', async (t) => {
+  const jar = Buffer.from('jar');
+  const server = await startServer((_request, url) =>
+    url.pathname === '/download/mod.jar'
+      ? { body: jar }
+      : { status: 404, json: {} },
+  );
+  t.after(server.close);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-modrinth-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+
+  const result = await makeService(server.baseUrl).downloadVersion({
+    instanceDirectory: root,
+    version: {
+      id: 'safe-name',
+      projectId: 'project',
+      name: 'Safe name',
+      versionNumber: '1',
+      versionType: 'release',
+      gameVersions: ['1.20.1'],
+      loaders: ['fabric'],
+      datePublished: null,
+      dependencies: [],
+      files: [{
+        url: `${server.baseUrl}/download/mod.jar`,
+        filename: '../../outside.jar',
+        primary: true,
+        size: jar.length,
+        sha1: sha1(jar),
+        sha512: null,
+      }],
+    },
+    loader: 'fabric',
+    minecraftVersion: '1.20.1',
+  });
+
+  assert.equal(result.fileName, 'outside.jar');
+  assert.equal(
+    await fs.readFile(path.join(root, 'mods', 'outside.jar'), 'utf8'),
+    'jar',
+  );
+  await assert.rejects(fs.access(path.join(root, '..', 'outside.jar')));
 });

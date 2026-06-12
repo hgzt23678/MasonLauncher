@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import type { ChildProcess } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import {
   assertGameDirArgument,
@@ -233,4 +236,65 @@ test('ProcessRunnerはshellを使わずtokenをログでマスクする', () => 
     logs.every((detail) => !String(detail?.commandLine).includes('top-secret')),
   );
   assert.equal(states[0]?.running, true);
+});
+
+test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-process-log-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const child = new EventEmitter() as ChildProcess;
+  Object.assign(child, {
+    pid: 4321,
+    stdout: new EventEmitter(),
+    stderr: new EventEmitter(),
+  });
+  let now = Date.parse('2026-01-01T00:00:00.000Z');
+  const runner = new MinecraftProcessRunner(
+    () => undefined,
+    () => child,
+    () => now,
+  );
+  const states: Array<{ running: boolean; category?: string }> = [];
+  const launcherLogPath = path.join(root, 'launcher.log');
+  runner.run(
+    {
+      command: 'java',
+      args: [
+        '-cp',
+        'client.jar',
+        'net.minecraft.client.main.Main',
+        '--accessToken',
+        'top-secret-token',
+      ],
+      cwd: root,
+      metadata: {
+        instanceId: 'test-instance',
+        versionId: '1.20.1',
+        javaPath: 'java',
+        javaMajor: 17,
+        javaArch: 'x64',
+        gameDir: root,
+        assetsDir: path.join(root, 'assets'),
+        nativesDir: path.join(root, 'natives'),
+        mainClass: 'net.minecraft.client.main.Main',
+        classpathEntries: 1,
+        argumentCount: 5,
+        latestLogPath: path.join(root, 'logs', 'latest.log'),
+        launcherLogPath,
+      },
+    },
+    { onState: (state) => states.push(state) },
+  );
+  now += 16_000;
+  child.emit('exit', 0, null);
+  for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  assert.equal(states.at(-1)?.running, false);
+  assert.equal(states.at(-1)?.category, 'crash');
+  const log = await fs.readFile(launcherLogPath, 'utf8');
+  assert.match(log, /"windowEverAppeared":false/);
+  assert.match(log, /"elapsedMs":16000/);
+  assert.doesNotMatch(log, /top-secret-token/);
+  assert.match(log, /\[REDACTED\]/);
 });

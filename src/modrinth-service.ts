@@ -1,16 +1,21 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { createWriteStream, promises as fs } from 'node:fs';
+import { once } from 'node:events';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import type { WebContents } from 'electron';
 import type {
   LauncherLogLevel,
   LauncherLogStage,
 } from './diagnostics';
+import { ensureInstanceSubdirectory } from './instance-paths';
 
 const defaultApiBase = 'https://api.modrinth.com/v2';
 // A unique, contactable User-Agent is required by Modrinth's API guidelines.
 const defaultUserAgent =
   'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
+const defaultMaxDownloadBytes = 512 * 1024 * 1024;
+const defaultDownloadHosts = ['cdn.modrinth.com', 'api.modrinth.com'];
 
 type LogWriter = (
   level: LauncherLogLevel,
@@ -311,6 +316,9 @@ export class ModrinthService {
   private readonly apiBase: string;
   private readonly userAgent: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly allowInsecureDownloads: boolean;
+  private readonly allowedDownloadHosts: Set<string>;
+  private readonly maxDownloadBytes: number;
 
   constructor(
     private readonly log: LogWriter = () => undefined,
@@ -318,11 +326,70 @@ export class ModrinthService {
       apiBase?: string;
       userAgent?: string;
       fetchImpl?: typeof fetch;
+      allowInsecureDownloads?: boolean;
+      allowedDownloadHosts?: string[];
+      maxDownloadBytes?: number;
     } = {},
   ) {
     this.apiBase = options.apiBase ?? defaultApiBase;
     this.userAgent = options.userAgent ?? defaultUserAgent;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.allowInsecureDownloads = options.allowInsecureDownloads === true;
+    this.allowedDownloadHosts = new Set(
+      options.allowedDownloadHosts ?? defaultDownloadHosts,
+    );
+    this.maxDownloadBytes =
+      options.maxDownloadBytes ?? defaultMaxDownloadBytes;
+  }
+
+  private validateDownloadUrl(value: string) {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch (error) {
+      throw new ModrinthError(
+        'Modrinth download URL is invalid.',
+        'invalid-input',
+        { url: value },
+        { cause: error },
+      );
+    }
+    if (!this.allowInsecureDownloads && url.protocol !== 'https:') {
+      throw new ModrinthError(
+        'Modrinth downloads must use HTTPS.',
+        'invalid-input',
+        { protocol: url.protocol, host: url.host },
+      );
+    }
+    if (
+      !this.allowInsecureDownloads &&
+      !this.allowedDownloadHosts.has(url.hostname) &&
+      !url.hostname.endsWith('.modrinth.com')
+    ) {
+      throw new ModrinthError(
+        'Modrinth download host is not allowed.',
+        'invalid-input',
+        { host: url.hostname },
+      );
+    }
+    return url;
+  }
+
+  private safeModFileName(fileName: string, fallbackId: string) {
+    const baseName = path.basename(fileName)
+      .replace(/[<>:"/\\|?*]/g, '-')
+      .split('')
+      .map((character) => (character.charCodeAt(0) < 32 ? '-' : character))
+      .join('')
+      .replace(/[ .]+$/g, '')
+      .slice(0, 180);
+    const fallback = `mod-${fallbackId
+      .replace(/[^a-zA-Z0-9-]/g, '-')
+      .slice(0, 80)}.jar`;
+    const normalized = baseName || fallback;
+    return normalized.toLowerCase().endsWith('.jar')
+      ? normalized
+      : `${normalized}.jar`;
   }
 
   private async requestJson<T>(url: URL | string): Promise<T> {
@@ -624,7 +691,7 @@ export class ModrinthService {
   ): Promise<DownloadVersionResult> {
     const { instanceDirectory, version, loader, minecraftVersion } = params;
     const file = this.selectDownloadFile(version);
-    const safeFileName = path.basename(file.filename);
+    const safeFileName = this.safeModFileName(file.filename, version.id);
     if (!safeFileName.toLowerCase().endsWith('.jar')) {
       throw new ModrinthError(
         `Modrinthが返したファイル名「${file.filename}」はMOD jarとして扱えません。`,
@@ -633,7 +700,10 @@ export class ModrinthService {
       );
     }
 
-    const modsDirectory = path.join(instanceDirectory, 'mods');
+    const modsDirectory = await ensureInstanceSubdirectory(
+      instanceDirectory,
+      'mods',
+    );
     try {
       await fs.mkdir(modsDirectory, { recursive: true });
     } catch (error) {
@@ -654,7 +724,8 @@ export class ModrinthService {
         // Never overwrite an unrelated file with the same name: write the
         // new mod under a collision-safe name derived from the version id.
         const base = targetName.replace(/\.jar$/i, '');
-        targetName = `${base}-${version.id}.jar`;
+        const safeVersionId = version.id.replace(/[^a-zA-Z0-9-]/g, '-');
+        targetName = `${base}-${safeVersionId}.jar`;
         target = path.join(modsDirectory, targetName);
         renamed = true;
         const renamedExisting = await this.hashFile(target);
@@ -766,97 +837,137 @@ export class ModrinthService {
     destination: string,
     onProgress?: (received: number, total: number) => void,
   ): Promise<{ sha1: string; sha512: string; size: number }> {
+    const requestedUrl = this.validateDownloadUrl(file.url);
     let response: Response;
     try {
-      response = await this.fetchImpl(file.url, {
+      response = await this.fetchImpl(requestedUrl, {
         headers: { 'User-Agent': this.userAgent },
       });
     } catch (error) {
       throw new ModrinthError(
-        'MODのダウンロードに失敗しました（ネットワークを確認してください）。',
+        'Failed to download the MOD due to a network error.',
         'network',
         { url: file.url, destination },
         { cause: error },
       );
     }
+
+    this.validateDownloadUrl(response.url || requestedUrl.toString());
     if (!response.ok) {
-      const kind: ModrinthErrorKind =
+      throw new ModrinthError(
+        `Failed to download the MOD (HTTP ${response.status}).`,
         response.status === 404
           ? 'not-found'
           : response.status === 429
             ? 'rate-limited'
             : response.status >= 500
               ? 'server'
-              : 'download-failed';
-      this.log('error', 'mods', 'MODのダウンロードに失敗しました。', {
-        url: file.url,
-        destination,
-        status: response.status,
-      });
-      throw new ModrinthError(
-        `MODのダウンロードに失敗しました（HTTP ${response.status}）。`,
-        kind,
+              : 'download-failed',
         { url: file.url, destination, status: response.status },
       );
     }
 
-    const total =
-      file.size || Number(response.headers.get('content-length')) || 0;
-    const sha1 = createHash('sha1');
-    const sha512 = createHash('sha512');
-    const chunks: Buffer[] = [];
-    let received = 0;
-    const body = response.body;
-    if (body) {
-      const reader = body.getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) {
-          break;
-        }
-        const chunk = Buffer.from(value);
-        chunks.push(chunk);
-        sha1.update(chunk);
-        sha512.update(chunk);
-        received += chunk.length;
-        onProgress?.(received, total);
-      }
-    } else {
-      const chunk = Buffer.from(await response.arrayBuffer());
-      chunks.push(chunk);
-      sha1.update(chunk);
-      sha512.update(chunk);
-      received = chunk.length;
-      onProgress?.(received, total);
-    }
-
-    const data = Buffer.concat(chunks);
-    const actualSha1 = sha1.digest('hex');
-    const actualSha512 = sha512.digest('hex');
-    if (file.sha1 && actualSha1 !== file.sha1) {
+    const contentLength = Number(response.headers.get('content-length')) || 0;
+    const declaredSize = file.size > 0 ? file.size : 0;
+    const total = declaredSize || contentLength;
+    if (
+      declaredSize > this.maxDownloadBytes ||
+      contentLength > this.maxDownloadBytes
+    ) {
       throw new ModrinthError(
-        'ダウンロードしたMODのSHA-1が一致しません。',
-        'hash-mismatch',
-        { url: file.url, destination },
-      );
-    }
-    if (!file.sha1 && file.sha512 && actualSha512 !== file.sha512) {
-      throw new ModrinthError(
-        'ダウンロードしたMODのSHA-512が一致しません。',
-        'hash-mismatch',
-        { url: file.url, destination },
+        'MOD file exceeds the configured download size limit.',
+        'download-failed',
+        {
+          url: file.url,
+          declaredSize,
+          contentLength,
+          maxDownloadBytes: this.maxDownloadBytes,
+        },
       );
     }
 
     const temporary = `${destination}.tmp-${randomUUID()}`;
+    const sha1 = createHash('sha1');
+    const sha512 = createHash('sha512');
+    const output = createWriteStream(temporary, { flags: 'wx' });
+    let received = 0;
     try {
-      await fs.writeFile(temporary, data);
+      if (!response.body) {
+        throw new ModrinthError(
+          'MOD download returned an empty response body.',
+          'download-failed',
+          { url: file.url, destination },
+        );
+      }
+      for await (const value of Readable.fromWeb(response.body as never)) {
+        const chunk = Buffer.from(value as Uint8Array);
+        received += chunk.length;
+        if (received > this.maxDownloadBytes) {
+          throw new ModrinthError(
+            'MOD file exceeded the configured download size limit.',
+            'download-failed',
+            {
+              url: file.url,
+              received,
+              maxDownloadBytes: this.maxDownloadBytes,
+            },
+          );
+        }
+        sha1.update(chunk);
+        sha512.update(chunk);
+        if (!output.write(chunk)) {
+          await once(output, 'drain');
+        }
+        onProgress?.(received, total);
+      }
+
+      const closed = once(output, 'close');
+      output.end();
+      await closed;
+
+      if (declaredSize && received !== declaredSize) {
+        throw new ModrinthError(
+          'Downloaded MOD size does not match the Modrinth declaration.',
+          'download-failed',
+          { url: file.url, expected: declaredSize, actual: received },
+        );
+      }
+      if (contentLength && received !== contentLength) {
+        throw new ModrinthError(
+          'Downloaded MOD size does not match the HTTP Content-Length.',
+          'download-failed',
+          { url: file.url, expected: contentLength, actual: received },
+        );
+      }
+
+      const actualSha1 = sha1.digest('hex');
+      const actualSha512 = sha512.digest('hex');
+      if (file.sha1 && actualSha1 !== file.sha1) {
+        throw new ModrinthError(
+          'Downloaded MOD SHA-1 does not match the Modrinth declaration.',
+          'hash-mismatch',
+          { url: file.url, destination },
+        );
+      }
+      if (file.sha512 && actualSha512 !== file.sha512) {
+        throw new ModrinthError(
+          'Downloaded MOD SHA-512 does not match the Modrinth declaration.',
+          'hash-mismatch',
+          { url: file.url, destination },
+        );
+      }
+
+      await fs.rm(destination, { force: true });
       await fs.rename(temporary, destination);
+      return { sha1: actualSha1, sha512: actualSha512, size: received };
     } catch (error) {
+      output.destroy();
       await fs.rm(temporary, { force: true }).catch(() => {});
+      if (error instanceof ModrinthError) {
+        throw error;
+      }
       throw classifyWriteError(error, destination);
     }
-    return { sha1: actualSha1, sha512: actualSha512, size: data.length };
   }
 
   // --- New foundation: installed-mods.json management ---------------------
@@ -941,8 +1052,12 @@ export class ModrinthService {
     }
     const safeFileName = path.basename(target.fileName);
     if (safeFileName === target.fileName && safeFileName.endsWith('.jar')) {
+      const modsDirectory = await ensureInstanceSubdirectory(
+        instanceDirectory,
+        'mods',
+      );
       await fs
-        .rm(path.join(instanceDirectory, 'mods', safeFileName), {
+        .rm(path.join(modsDirectory, safeFileName), {
           force: true,
         })
         .catch((error) => {
@@ -1070,35 +1185,23 @@ export class ModrinthService {
     expectedSha1?: string,
   ) {
     try {
-      if (!expectedSha1 || (await this.sha1(destination)) === expectedSha1) {
+      if (expectedSha1 && (await this.sha1(destination)) === expectedSha1) {
         return;
       }
     } catch {
       // The destination does not exist or is unreadable.
     }
-
-    const response = await this.fetchImpl(url, {
-      headers: { 'User-Agent': this.userAgent },
-    });
-    if (!response.ok) {
-      throw new ModrinthError(
-        `Modrinth CDNからMODを取得できません（HTTP ${response.status}）。`,
-        response.status >= 500 ? 'server' : 'download-failed',
-        { url, status: response.status },
-      );
-    }
-    const data = Buffer.from(await response.arrayBuffer());
-    if (
-      expectedSha1 &&
-      createHash('sha1').update(data).digest('hex') !== expectedSha1
-    ) {
-      throw new ModrinthError(
-        'ダウンロードしたMODのSHA-1が一致しません。',
-        'hash-mismatch',
-        { url, destination },
-      );
-    }
-    await fs.writeFile(destination, data);
+    await this.downloadToFile(
+      {
+        url,
+        filename: path.basename(destination),
+        primary: true,
+        size: 0,
+        sha1: expectedSha1 ?? null,
+        sha512: null,
+      },
+      destination,
+    );
   }
 
   async syncMods(
@@ -1112,7 +1215,10 @@ export class ModrinthService {
       selectedMods: selected.length,
       instanceDirectory,
     });
-    const modsDirectory = path.join(instanceDirectory, 'mods');
+    const modsDirectory = await ensureInstanceSubdirectory(
+      instanceDirectory,
+      'mods',
+    );
     const managedFile = path.join(instanceDirectory, '.simple-craft-mods.json');
     await fs.mkdir(modsDirectory, { recursive: true });
     const resolved = await this.resolveMods(selected, gameVersion);

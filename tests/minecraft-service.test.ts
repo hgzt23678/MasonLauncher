@@ -57,6 +57,26 @@ test('Mojang Java manifestの全ファイルサイズが一致すれば完了扱
   );
 });
 
+test('Mojang Java runtime rejects a same-size SHA-1 mismatch', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-java-sha1-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const executable = path.join(root, 'bin', 'java.exe');
+  await fs.mkdir(path.dirname(executable), { recursive: true });
+  await fs.writeFile(executable, 'evil');
+
+  assert.equal(
+    await isJavaRuntimeManifestComplete(root, runtimeManifest('java')),
+    false,
+  );
+
+  await repairJavaRuntimeManifestFiles(
+    root,
+    runtimeManifest('java'),
+    async () => new Response('java', { status: 200 }),
+  );
+  assert.equal(await fs.readFile(executable, 'utf8'), 'java');
+});
+
 test('停止したMojang Javaダウンロードの不完全ファイルを補修する', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-java-repair-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));

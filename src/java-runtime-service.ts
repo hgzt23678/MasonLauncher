@@ -386,7 +386,7 @@ export const isJavaArchitectureCompatible = (
   );
 };
 
-const defaultProbe: JavaProbe = async (executable) => {
+export const probeJavaExecutable: JavaProbe = async (executable) => {
   // javaw.exe has no console output; probe its java.exe sibling instead.
   const probeTarget =
     process.platform === 'win32' &&
@@ -459,7 +459,7 @@ export class JavaRuntimeService {
     this.managedRoot = path.join(this.javaRoot, 'managed');
     this.registryFile = path.join(this.javaRoot, 'java-runtimes.json');
     this.fetchImpl = options.fetchImpl ?? fetch;
-    this.probe = options.probe ?? defaultProbe;
+    this.probe = options.probe ?? probeJavaExecutable;
     this.platform = options.platform ?? process.platform;
     this.arch = options.arch ?? process.arch;
     this.discoBase = options.discoApiBase ?? discoApiBase;
@@ -1225,6 +1225,26 @@ export class JavaRuntimeService {
     });
   }
 
+  private assertArchitectureCompatible(
+    javaArchitecture: string | null,
+    requiredMajor: number,
+    selected: string,
+    detail: Record<string, unknown>,
+  ) {
+    if (isJavaArchitectureCompatible(this.arch, javaArchitecture)) return;
+    throw javaErrorWithRemedy({
+      message: `Selected Java architecture (${javaArchitecture}) is incompatible with this system (${this.arch}).`,
+      requiredMajor,
+      selected,
+      code: 'JAVA_ARCHITECTURE_MISMATCH',
+      detail: {
+        hostArchitecture: this.arch,
+        javaArchitecture,
+        ...detail,
+      },
+    });
+  }
+
   private async resolveCustomPath(
     settings: ProfileJavaSettings,
     requiredMajor: number,
@@ -1265,6 +1285,12 @@ export class JavaRuntimeService {
         },
       });
     }
+    this.assertArchitectureCompatible(
+      validation.arch,
+      requiredMajor,
+      customPath,
+      { javaPath: customPath },
+    );
     const selection: ResolvedJavaSelection = {
       javaPath: path.resolve(customPath),
       majorVersion: validation.majorVersion,
@@ -1319,6 +1345,12 @@ export class JavaRuntimeService {
         },
       });
     }
+    this.assertArchitectureCompatible(
+      runtime.arch,
+      requiredMajor,
+      runtime.path,
+      { runtimeId: runtime.id, javaPath: runtime.path },
+    );
     const selection: ResolvedJavaSelection = {
       javaPath: runtime.path,
       majorVersion: runtime.majorVersion,

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 import started from 'electron-squirrel-startup';
 import { Version } from '@xmcl/core';
 import { resolveMicrosoftClientId } from './auth-config';
@@ -15,6 +16,12 @@ import {
   type JavaDistributionId,
   type ProfileJavaSettings,
 } from './java-runtime-service';
+import {
+  ensureInstanceSubdirectory,
+  ensureLauncherLogsDirectory,
+  ensureManagedInstanceDirectory,
+  managedInstanceDirectory,
+} from './instance-paths';
 import {
   normalizeLaunchProfileVersion,
   resolveLibraryPath,
@@ -67,7 +74,6 @@ const diagnostics = new LauncherDiagnostics((entry) => {
 const log = diagnostics.log.bind(diagnostics);
 const modrinthService = new ModrinthService(log);
 const appName = 'Mason Launcher';
-const instanceStorageName = 'mason-launcher';
 const legacyAppDataName = 'Simple Craft Launcher';
 const legacyInstanceStorageName = 'simple-craft';
 
@@ -125,8 +131,68 @@ const migrateLegacyUserData = async () => {
 // shared Minecraft cache (.minecraft or settings.gameDirectory) is never the
 // game working directory.  The `instance/` leaf is the actual --gameDir value;
 // the parent directory can hold per-instance metadata later.
+const managedInstancesRoot = () =>
+  path.join(app.getPath('userData'), 'instances');
+
 const defaultInstanceDir = (profileId: string) =>
-  path.join(app.getPath('userData'), 'instances', profileId, 'instance');
+  managedInstanceDirectory(managedInstancesRoot(), profileId);
+
+const migrateKnownProfileInstances = async () => {
+  let raw: Partial<LauncherSettings>;
+  try {
+    raw = JSON.parse(await fs.readFile(settingsFile(), 'utf8')) as Partial<LauncherSettings>;
+  } catch {
+    return;
+  }
+  if (!Array.isArray(raw.profiles)) return;
+  const gameDirectory =
+    typeof raw.gameDirectory === 'string' && raw.gameDirectory.trim()
+      ? raw.gameDirectory.trim()
+      : defaultGameDirectory();
+  let changed = false;
+  for (const profile of raw.profiles) {
+    if (
+      !profile ||
+      typeof profile.id !== 'string' ||
+      !/^[a-zA-Z0-9-]+$/.test(profile.id)
+    ) {
+      continue;
+    }
+    const target = defaultInstanceDir(profile.id);
+    const configured =
+      typeof profile.instanceDir === 'string' ? profile.instanceDir.trim() : '';
+    const knownSources = [
+      path.join(gameDirectory, 'mason-launcher', 'profiles', profile.id),
+      path.join(
+        gameDirectory,
+        legacyInstanceStorageName,
+        'profiles',
+        profile.id,
+      ),
+    ];
+    const source = knownSources.find(
+      (candidate) =>
+        configured &&
+        path.resolve(candidate) === path.resolve(configured),
+    );
+    if (source && (await pathExists(source)) && !(await pathExists(target))) {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.cp(source, target, { recursive: true, errorOnExist: true });
+      log('info', 'settings', 'Migrated an instance into managed storage.', {
+        profileId: profile.id,
+        source,
+        target,
+      });
+    }
+    if (configured !== target) {
+      profile.instanceDir = target;
+      changed = true;
+    }
+  }
+  if (changed) {
+    await writeSettings(raw as LauncherSettings);
+  }
+};
 
 const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
@@ -206,20 +272,26 @@ const readSettings = async (): Promise<LauncherSettings> => {
                 : minecraftVersion;
             // Profiles saved before instanceDir was added get the path that
             // the launcher already uses at runtime, so saves are not lost.
-            const baseDir =
-              typeof value.gameDirectory === 'string' && value.gameDirectory.trim()
-                ? value.gameDirectory.trim()
-                : defaultGameDirectory();
-            const instanceDir =
-              typeof (profile as { instanceDir?: unknown }).instanceDir === 'string' &&
-              ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
+            const configuredInstanceDir =
+              typeof (profile as { instanceDir?: unknown }).instanceDir === 'string'
                 ? ((profile as { instanceDir?: unknown }).instanceDir as string).trim()
-                : path.join(
-                    baseDir,
-                    legacyInstanceStorageName,
-                    'profiles',
-                    profile.id,
-                  );
+                : '';
+            const instanceDir = defaultInstanceDir(profile.id);
+            if (
+              configuredInstanceDir &&
+              path.resolve(configuredInstanceDir) !== path.resolve(instanceDir)
+            ) {
+              log(
+                'warn',
+                'settings',
+                'An instanceDir outside the launcher-managed directory was ignored.',
+                {
+                  profileId: profile.id,
+                  configuredInstanceDir,
+                  managedInstanceDir: instanceDir,
+                },
+              );
+            }
             return {
               id: profile.id,
               name: profile.name.trim() || 'プロファイル',
@@ -322,17 +394,61 @@ const pathExists = async (target: string) => {
 // Each profile has its own instance directory.  For profiles persisted before
 // this field was introduced, instanceDir was already computed the same way at
 // launch time so nothing moves.
-const resolveInstanceDirectory = (
-  gameDirectory: string,
-  profile: LaunchProfile,
-) =>
-  profile.instanceDir ||
-  path.join(
-    gameDirectory,
-    legacyInstanceStorageName,
-    'profiles',
-    profile.id,
-  );
+const resolveInstanceDirectory = async (profile: LaunchProfile) =>
+  ensureManagedInstanceDirectory(managedInstancesRoot(), profile.id);
+
+const isTrustedRendererUrl = (value: string) => {
+  try {
+    const url = new URL(value);
+    if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
+      return url.origin === new URL(MAIN_WINDOW_VITE_DEV_SERVER_URL).origin;
+    }
+    return url.protocol === 'file:';
+  } catch {
+    return false;
+  }
+};
+
+const assertTrustedIpcSender = (event: IpcMainInvokeEvent) => {
+  const frame = event.senderFrame;
+  if (
+    !frame ||
+    frame !== event.sender.mainFrame ||
+    !isTrustedRendererUrl(frame.url)
+  ) {
+    throw new Error('IPC request rejected: untrusted renderer frame.');
+  }
+};
+
+const trustedIpc = {
+  handle<TArgs extends unknown[]>(
+    channel: string,
+    listener: (
+      event: IpcMainInvokeEvent,
+      ...args: TArgs
+    ) => unknown | Promise<unknown>,
+  ) {
+    ipcMain.handle(channel, (event, ...args) => {
+      assertTrustedIpcSender(event);
+      return listener(event, ...(args as TArgs));
+    });
+  },
+};
+
+const openTrustedExternal = async (value: string) => {
+  const url = new URL(value);
+  const trustedHost =
+    url.hostname === 'microsoft.com' ||
+    url.hostname.endsWith('.microsoft.com') ||
+    url.hostname === 'microsoftonline.com' ||
+    url.hostname.endsWith('.microsoftonline.com') ||
+    url.hostname === 'live.com' ||
+    url.hostname.endsWith('.live.com');
+  if (url.protocol !== 'https:' || !trustedHost) {
+    throw new Error('External URL rejected by the launcher security policy.');
+  }
+  await shell.openExternal(url.toString());
+};
 
 // Maps a profile loader onto a Modrinth loader facet. Vanilla profiles have no
 // mod loader, so they cannot host Modrinth mods.
@@ -618,6 +734,19 @@ const ensureVersionInstalled = async (
 
 const getLauncherState = async () => {
   const settings = await readSettings();
+  const selectedProfile =
+    settings.profiles.find(
+      (profile) => profile.id === settings.selectedProfileId,
+    ) ?? settings.profiles[0];
+  const selectedInstanceDirectory = await resolveInstanceDirectory(
+    selectedProfile,
+  );
+  const [savesDirectory, modsDirectory, screenshotsDirectory] =
+    await Promise.all([
+      ensureInstanceSubdirectory(selectedInstanceDirectory, 'saves'),
+      ensureInstanceSubdirectory(selectedInstanceDirectory, 'mods'),
+      ensureInstanceSubdirectory(selectedInstanceDirectory, 'screenshots'),
+    ]);
   const [
     directoryExists,
     installedVersions,
@@ -639,9 +768,9 @@ const getLauncherState = async () => {
         );
         return [];
       }),
-    countEntries(path.join(settings.gameDirectory, 'saves')),
-    countEntries(path.join(settings.gameDirectory, 'mods'), 'file'),
-    countEntries(path.join(settings.gameDirectory, 'screenshots'), 'file'),
+    countEntries(savesDirectory),
+    countEntries(modsDirectory, 'file'),
+    countEntries(screenshotsDirectory, 'file'),
     authService.getState(),
   ]);
 
@@ -738,14 +867,14 @@ const getLauncherState = async () => {
 };
 
 const registerIpcHandlers = () => {
-  ipcMain.handle('launcher:get-state', getLauncherState);
-  ipcMain.handle('launcher:get-logs', () => diagnostics.getEntries());
-  ipcMain.handle('launcher:clear-logs', () => {
+  trustedIpc.handle('launcher:get-state', getLauncherState);
+  trustedIpc.handle('launcher:get-logs', () => diagnostics.getEntries());
+  trustedIpc.handle('launcher:clear-logs', () => {
     diagnostics.clear();
     return diagnostics.getEntries();
   });
 
-  ipcMain.handle('launcher:choose-directory', async () => {
+  trustedIpc.handle('launcher:choose-directory', async () => {
     const settings = await readSettings();
     const result = await dialog.showOpenDialog({
       title: 'Minecraft のゲームディレクトリを選択',
@@ -760,7 +889,7 @@ const registerIpcHandlers = () => {
     return getLauncherState();
   });
 
-  ipcMain.handle('launcher:open-directory', async () => {
+  trustedIpc.handle('launcher:open-directory', async () => {
     const settings = await readSettings();
     await fs.mkdir(settings.gameDirectory, { recursive: true });
     const error = await shell.openPath(settings.gameDirectory);
@@ -769,13 +898,13 @@ const registerIpcHandlers = () => {
       : { ok: true, message: 'ゲームフォルダーを開きました。' };
   });
 
-  ipcMain.handle('launcher:open-instance-folder', async (_event, profileId: unknown) => {
+  trustedIpc.handle('launcher:open-instance-folder', async (_event, profileId: unknown) => {
     if (typeof profileId !== 'string') {
       throw new Error('プロファイル指定が不正です。');
     }
     const settings = await readSettings();
     const profile = findProfileOrThrow(settings, profileId);
-    const instanceDir = resolveInstanceDirectory(settings.gameDirectory, profile);
+    const instanceDir = await resolveInstanceDirectory(profile);
     await fs.mkdir(instanceDir, { recursive: true });
     const error = await shell.openPath(instanceDir);
     return error
@@ -783,22 +912,24 @@ const registerIpcHandlers = () => {
       : { ok: true, message: 'インスタンスフォルダを開きました。' };
   });
 
-  ipcMain.handle('launcher:open-instance-logs', async (_event, profileId: unknown) => {
+  trustedIpc.handle('launcher:open-instance-logs', async (_event, profileId: unknown) => {
     if (typeof profileId !== 'string') {
       throw new Error('プロファイル指定が不正です。');
     }
     const settings = await readSettings();
     const profile = findProfileOrThrow(settings, profileId);
-    const instanceDir = resolveInstanceDirectory(settings.gameDirectory, profile);
-    const logsDir = path.join(instanceDir, 'logs');
-    await fs.mkdir(logsDir, { recursive: true });
+    await resolveInstanceDirectory(profile);
+    const logsDir = await ensureLauncherLogsDirectory(
+      managedInstancesRoot(),
+      profile.id,
+    );
     const error = await shell.openPath(logsDir);
     return error
       ? { ok: false, message: error }
       : { ok: true, message: 'ログフォルダを開きました。' };
   });
 
-  ipcMain.handle('launcher:save-settings', async (_event, input: unknown) => {
+  trustedIpc.handle('launcher:save-settings', async (_event, input: unknown) => {
     const settings = await readSettings();
     const update = input as Partial<LauncherSettings>;
 
@@ -815,7 +946,7 @@ const registerIpcHandlers = () => {
     return getLauncherState();
   });
 
-  ipcMain.handle('profile:save', async (_event, input: unknown) => {
+  trustedIpc.handle('profile:save', async (_event, input: unknown) => {
     const settings = await readSettings();
     const update = input as Partial<LaunchProfile>;
     const name = typeof update.name === 'string' ? update.name.trim() : '';
@@ -898,12 +1029,7 @@ const registerIpcHandlers = () => {
         maxMemory,
         mods: [],
         java: javaSettings ?? normalizeJavaSettings(undefined),
-        instanceDir: path.join(
-          settings.gameDirectory,
-          instanceStorageName,
-          'profiles',
-          newId,
-        ),
+        instanceDir: defaultInstanceDir(newId),
       };
       settings.profiles.push(profile);
       settings.selectedProfileId = profile.id;
@@ -913,7 +1039,7 @@ const registerIpcHandlers = () => {
     return getLauncherState();
   });
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'forge:list-builds',
     async (_event, minecraftVersion: unknown) => {
       if (
@@ -926,7 +1052,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'java:list-runtimes',
     async (_event, options: unknown) => {
       const input = (options ?? {}) as {
@@ -940,7 +1066,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle('java:add-custom', async () => {
+  trustedIpc.handle('java:add-custom', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Java実行ファイルを選択',
       properties: ['openFile'],
@@ -955,14 +1081,14 @@ const registerIpcHandlers = () => {
     return javaRuntimeService.addCustomRuntime(result.filePaths[0]);
   });
 
-  ipcMain.handle('java:remove-runtime', async (_event, runtimeId: unknown) => {
+  trustedIpc.handle('java:remove-runtime', async (_event, runtimeId: unknown) => {
     if (typeof runtimeId !== 'string' || !runtimeId.trim()) {
       throw new Error('Javaランタイム指定が不正です。');
     }
     return javaRuntimeService.removeRuntime(runtimeId.trim());
   });
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'java:install-runtime',
     async (event, distribution: unknown, major: unknown) => {
       if (typeof distribution !== 'string' || typeof major !== 'number') {
@@ -983,7 +1109,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle('java:choose-executable', async () => {
+  trustedIpc.handle('java:choose-executable', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Java実行ファイルを選択',
       properties: ['openFile'],
@@ -1002,7 +1128,7 @@ const registerIpcHandlers = () => {
     return result.filePaths[0];
   });
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:search',
     async (_event, profileId: unknown, query: unknown) => {
       if (typeof profileId !== 'string' || typeof query !== 'string') {
@@ -1022,7 +1148,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'profile:add-mod',
     async (_event, profileId: unknown, input: unknown) => {
       if (typeof profileId !== 'string') {
@@ -1060,7 +1186,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'profile:remove-mod',
     async (_event, profileId: unknown, projectId: unknown) => {
       if (typeof profileId !== 'string' || typeof projectId !== 'string') {
@@ -1081,7 +1207,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:search-mods',
     async (_event, profileId: unknown, query: unknown, input: unknown) => {
       if (typeof query !== 'string') {
@@ -1107,14 +1233,14 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle('modrinth:get-project', async (_event, idOrSlug: unknown) => {
+  trustedIpc.handle('modrinth:get-project', async (_event, idOrSlug: unknown) => {
     if (typeof idOrSlug !== 'string') {
       throw new Error('プロジェクト指定が不正です。');
     }
     return modrinthService.getProject(idOrSlug);
   });
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:get-versions',
     async (_event, profileId: unknown, idOrSlug: unknown, input: unknown) => {
       if (typeof idOrSlug !== 'string') {
@@ -1138,7 +1264,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:download-version',
     async (event, profileId: unknown, versionId: unknown) => {
       if (typeof versionId !== 'string') {
@@ -1156,10 +1282,7 @@ const registerIpcHandlers = () => {
         );
       }
       const version = await modrinthService.getVersionInfo(versionId);
-      const instanceDirectory = resolveInstanceDirectory(
-        settings.gameDirectory,
-        profile,
-      );
+      const instanceDirectory = await resolveInstanceDirectory(profile);
       return modrinthService.downloadVersion(
         {
           instanceDirectory,
@@ -1172,20 +1295,17 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:list-installed-mods',
     async (_event, profileId: unknown) => {
       const settings = await readSettings();
       const profile = findProfileOrThrow(settings, profileId);
-      const instanceDirectory = resolveInstanceDirectory(
-        settings.gameDirectory,
-        profile,
-      );
+      const instanceDirectory = await resolveInstanceDirectory(profile);
       return modrinthService.listInstalledMods(instanceDirectory);
     },
   );
 
-  ipcMain.handle(
+  trustedIpc.handle(
     'modrinth:remove-installed-mod',
     async (_event, profileId: unknown, projectIdOrFileName: unknown) => {
       if (typeof projectIdOrFileName !== 'string') {
@@ -1193,10 +1313,7 @@ const registerIpcHandlers = () => {
       }
       const settings = await readSettings();
       const profile = findProfileOrThrow(settings, profileId);
-      const instanceDirectory = resolveInstanceDirectory(
-        settings.gameDirectory,
-        profile,
-      );
+      const instanceDirectory = await resolveInstanceDirectory(profile);
       return modrinthService.removeInstalledMod(
         instanceDirectory,
         projectIdOrFileName,
@@ -1204,7 +1321,7 @@ const registerIpcHandlers = () => {
     },
   );
 
-  ipcMain.handle('profile:select', async (_event, id: unknown) => {
+  trustedIpc.handle('profile:select', async (_event, id: unknown) => {
     if (typeof id !== 'string') {
       throw new Error('プロファイル指定が不正です。');
     }
@@ -1217,7 +1334,7 @@ const registerIpcHandlers = () => {
     return getLauncherState();
   });
 
-  ipcMain.handle('profile:delete', async (_event, id: unknown) => {
+  trustedIpc.handle('profile:delete', async (_event, id: unknown) => {
     if (typeof id !== 'string') {
       throw new Error('プロファイル指定が不正です。');
     }
@@ -1239,25 +1356,25 @@ const registerIpcHandlers = () => {
     return getLauncherState();
   });
 
-  ipcMain.handle('auth:login', (event) => authService.login(event.sender));
-  ipcMain.handle('auth:get-device-code', () =>
+  trustedIpc.handle('auth:login', (event) => authService.login(event.sender));
+  trustedIpc.handle('auth:get-device-code', () =>
     authService.getActiveDeviceCode(),
   );
-  ipcMain.handle('auth:get-flow-state', () => authService.getFlowState());
-  ipcMain.handle('auth:cancel-login', () => {
+  trustedIpc.handle('auth:get-flow-state', () => authService.getFlowState());
+  trustedIpc.handle('auth:cancel-login', () => {
     authService.cancelLogin();
   });
-  ipcMain.handle('auth:open-verification', async () => {
+  trustedIpc.handle('auth:open-verification', async () => {
     const verificationUri =
       authService.getActiveDeviceCode()?.verificationUri;
     if (!verificationUri) {
       throw new Error('有効なMicrosoft認証ページがありません。');
     }
-    await shell.openExternal(verificationUri);
+    await openTrustedExternal(verificationUri);
   });
-  ipcMain.handle('auth:logout', () => authService.logout());
+  trustedIpc.handle('auth:logout', () => authService.logout());
 
-  ipcMain.handle('minecraft:install-version', async (event, id: unknown) => {
+  trustedIpc.handle('minecraft:install-version', async (event, id: unknown) => {
     if (typeof id !== 'string') {
       throw new Error('バージョン指定が不正です。');
     }
@@ -1274,7 +1391,7 @@ const registerIpcHandlers = () => {
     return { ok: true, message: `${id} のインストールが完了しました。` };
   });
 
-  ipcMain.handle('minecraft:launch-version', async (event, id: unknown) => {
+  trustedIpc.handle('minecraft:launch-version', async (event, id: unknown) => {
     if (typeof id !== 'string') {
       throw new Error('バージョン指定が不正です。');
     }
@@ -1301,7 +1418,7 @@ const registerIpcHandlers = () => {
     });
   });
 
-  ipcMain.handle('minecraft:launch-profile', async (event, id: unknown) => {
+  trustedIpc.handle('minecraft:launch-profile', async (event, id: unknown) => {
     if (typeof id !== 'string') {
       throw new Error('プロファイル指定が不正です。');
     }
@@ -1367,10 +1484,7 @@ const registerIpcHandlers = () => {
         profile.resolvedVersionId = versionId;
         await writeSettings(settings);
       }
-      const instanceDirectory = resolveInstanceDirectory(
-        settings.gameDirectory,
-        profile,
-      );
+      const instanceDirectory = await resolveInstanceDirectory(profile);
       if (profile.loader === 'forge' && !offlineOnly) {
         await modrinthService.syncMods(
           instanceDirectory,
@@ -1415,7 +1529,20 @@ const createWindow = () => {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
     },
+  });
+
+  mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
+    if (!isTrustedRendererUrl(targetUrl)) {
+      event.preventDefault();
+      log('warn', 'app', 'Blocked renderer navigation.', { targetUrl });
+    }
+  });
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    log('warn', 'app', 'Blocked renderer window.open request.', { url });
+    return { action: 'deny' };
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL) {
@@ -1436,6 +1563,7 @@ app.whenReady().then(async () => {
   });
   try {
     await migrateLegacyUserData();
+    await migrateKnownProfileInstances();
   } catch (error) {
     diagnostics.error(
       'settings',
