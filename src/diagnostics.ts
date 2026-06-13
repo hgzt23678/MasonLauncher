@@ -37,12 +37,17 @@ type ErrorWithMetadata = Error & {
   error?: unknown;
 };
 
-const sensitiveKey = /token|authorization|password|secret|credential/i;
+const sensitiveKey =
+  /token|authorization|password|secret|credential|session|xsts/i;
 
 export const sanitizeLogText = (value: string) =>
   value
     .replace(
-      /\b(access[_-]?token|token|authorization|password|secret)\s*[:=]\s*[^\s"'<>]+/gi,
+      /\bauthorization\s*[:=]\s*[^\r\n]+/gi,
+      'Authorization=[REDACTED]',
+    )
+    .replace(
+      /\b(access[_-]?token|refresh[_-]?token|token|password|secret|session|xsts)\s*[:=]\s*[^\s"'<>]+/gi,
       '$1=[REDACTED]',
     )
     .replace(/Bearer\s+\S+/gi, 'Bearer [REDACTED]')

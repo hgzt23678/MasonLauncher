@@ -284,6 +284,42 @@ const channelRank: Record<ModrinthReleaseChannel, number> = {
   alpha: 2,
 };
 
+const normalizeSearchName = (value: string) =>
+  value.trim().toLocaleLowerCase().replace(/\s+/g, ' ');
+
+export const rankModrinthNameMatches = (
+  hits: ModrinthSearchHit[],
+  query: string,
+) => {
+  const normalizedQuery = normalizeSearchName(query);
+  if (!normalizedQuery) return hits;
+  const rank = (hit: ModrinthSearchHit) => {
+    const title = normalizeSearchName(hit.title);
+    const slug = normalizeSearchName(hit.slug).replace(/[-_]+/g, ' ');
+    if (title === normalizedQuery || slug === normalizedQuery) return 0;
+    if (
+      title.startsWith(normalizedQuery) ||
+      slug.startsWith(normalizedQuery)
+    ) {
+      return 1;
+    }
+    return 2;
+  };
+  return hits
+    .filter((hit) => {
+      const title = normalizeSearchName(hit.title);
+      const slug = normalizeSearchName(hit.slug).replace(/[-_]+/g, ' ');
+      return (
+        title.includes(normalizedQuery) ||
+        slug.includes(normalizedQuery)
+      );
+    })
+    .sort(
+      (left, right) =>
+        rank(left) - rank(right) || right.downloads - left.downloads,
+    );
+};
+
 const classifyWriteError = (error: unknown, destination: string) => {
   const code =
     error && typeof error === 'object' && 'code' in error
@@ -466,7 +502,9 @@ export class ModrinthService {
   ): Promise<ModrinthSearchHit[]> {
     const url = new URL(`${this.apiBase}/search`);
     const trimmed = query.trim();
-    url.searchParams.set('query', trimmed);
+    if (trimmed) {
+      url.searchParams.set('query', trimmed);
+    }
     const facets: string[][] = [['project_type:mod']];
     if (options.loader) {
       facets.push([`categories:${options.loader}`]);
@@ -486,7 +524,7 @@ export class ModrinthService {
     );
 
     const result = await this.requestJson<SearchResponse>(url);
-    return result.hits.map((hit) => ({
+    const hits = result.hits.map((hit) => ({
       projectId: hit.project_id,
       slug: hit.slug,
       title: hit.title,
@@ -499,6 +537,7 @@ export class ModrinthService {
       serverSide: sideSupport(hit.server_side),
       latestVersion: hit.latest_version ?? null,
     }));
+    return trimmed ? rankModrinthNameMatches(hits, trimmed) : hits;
   }
 
   // --- New foundation: project details ------------------------------------

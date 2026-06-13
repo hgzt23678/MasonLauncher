@@ -84,13 +84,13 @@ type JavaRuntimeInfo = {
 type LaunchProfile = {
   id: string;
   name: string;
-  profileType: 'vanilla' | 'forge';
-  loaderType: 'vanilla' | 'forge';
+  profileType: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  loaderType: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
   minecraftVersion: string;
   loaderVersion: string | null;
   resolvedVersionId: string;
   versionId: string;
-  loader: 'vanilla' | 'forge';
+  loader: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
   minMemory: number;
   maxMemory: number;
   mods: Array<{
@@ -272,6 +272,8 @@ declare global {
       openDirectory: () => Promise<ActionResult>;
       openInstanceFolder: (profileId: string) => Promise<ActionResult>;
       openInstanceLogs: (profileId: string) => Promise<ActionResult>;
+      openLatestLog: (profileId: string) => Promise<ActionResult>;
+      copyReproductionScript: (profileId: string) => Promise<ActionResult>;
       saveSettings: (
         settings: Record<string, unknown>,
       ) => Promise<LauncherState>;
@@ -287,6 +289,18 @@ declare global {
           artifactVersion: string;
           resolvedVersionId: string;
           installerUrl: string;
+        }>
+      >;
+      getModLoaderBuilds: (
+        loader: 'forge' | 'neoforge' | 'fabric',
+        minecraftVersion: string,
+      ) => Promise<
+        Array<{
+          loader: 'forge' | 'neoforge' | 'fabric';
+          minecraftVersion: string;
+          loaderVersion: string;
+          resolvedVersionId: string;
+          stable: boolean;
         }>
       >;
       listJavaRuntimes: (options?: {

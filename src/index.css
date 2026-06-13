@@ -296,8 +296,10 @@ h2.profiles-title {
 /* ─── Profile Grid ─── */
 .profile-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 232px));
+  align-items: stretch;
+  justify-content: start;
+  gap: 12px;
   padding-bottom: 24px;
 }
 
@@ -305,6 +307,8 @@ h2.profiles-title {
 .profile-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   border: 1px solid #303b2d;
   background: #151c14;
   border-radius: 6px;
@@ -326,7 +330,7 @@ h2.profiles-title {
 /* Art area */
 .profile-card-art {
   position: relative;
-  height: 90px;
+  height: 66px;
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -346,7 +350,7 @@ h2.profiles-title {
   background-image:
     linear-gradient(#a9cc91 1px, transparent 1px),
     linear-gradient(90deg, #a9cc91 1px, transparent 1px);
-  background-size: 20px 20px;
+  background-size: 18px 18px;
 }
 
 .profile-card-art.forge .profile-art-grid {
@@ -357,14 +361,14 @@ h2.profiles-title {
 
 .profile-art-icon {
   position: absolute;
-  bottom: 10px;
-  left: 14px;
-  width: 40px;
-  height: 40px;
+  bottom: 8px;
+  left: 12px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   font-family: Consolas, "Courier New", monospace;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   border: 1px solid;
   border-radius: 4px;
@@ -386,7 +390,8 @@ h2.profiles-title {
 
 /* Card body */
 .profile-card-body {
-  padding: 14px 14px 0;
+  min-width: 0;
+  padding: 11px 12px 0;
   flex: 1;
 }
 
@@ -394,11 +399,11 @@ h2.profiles-title {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .badge {
-  padding: 3px 6px;
+  padding: 2px 6px;
   font-family: Consolas, "Courier New", monospace;
   font-size: 8px;
   font-weight: 700;
@@ -425,8 +430,8 @@ h2.profiles-title {
 }
 
 .profile-card-name {
-  margin: 0 0 6px;
-  font-size: 14px;
+  margin: 0 0 5px;
+  font-size: 13px;
   font-weight: 650;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -435,9 +440,12 @@ h2.profiles-title {
 
 .profile-card-version {
   margin: 0 0 4px;
+  overflow: hidden;
   color: #91a287;
   font-family: Consolas, "Courier New", monospace;
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile-card-memory {
@@ -450,7 +458,7 @@ h2.profiles-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 10px;
+  margin-top: 8px;
   font-size: 9px;
   color: #7c8775;
 }
@@ -470,23 +478,38 @@ h2.profiles-title {
 
 /* Card actions */
 .profile-card-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(5, 26px);
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 12px 14px 14px;
-  margin-top: 10px;
+  gap: 2px;
+  min-height: 43px;
+  padding: 7px 8px 8px;
+  margin-top: 8px;
   border-top: 1px solid #232e22;
 }
 
 .profile-card-actions md-filled-button {
   flex: 1;
+  min-width: 0;
+  --md-filled-button-container-height: 34px;
   --md-filled-button-container-shape: 4px;
+  --md-filled-button-label-text-size: 9px;
+  --md-filled-button-leading-space: 6px;
+  --md-filled-button-trailing-space: 6px;
 }
 
 .profile-card-actions md-icon-button {
+  width: 26px;
+  height: 26px;
+  --md-icon-button-state-layer-size: 26px;
+  --md-icon-button-icon-size: 16px;
   --md-icon-button-icon-color: #7d8977;
   --md-icon-button-hover-icon-color: #c7d2c0;
+}
+
+.profile-card-actions md-icon-button svg {
+  width: 16px;
+  height: 16px;
 }
 
 /* ─── MD Component Theming ─── */

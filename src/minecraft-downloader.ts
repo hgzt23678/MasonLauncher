@@ -743,9 +743,22 @@ export class MinecraftDownloader {
     version: ResolvedVersion,
     onProgress: ProgressWriter,
   ) {
-    const nativeLibraries = version.libraries.filter(
-      (library) => library.isNative,
-    );
+    const nativeLibraries = version.libraries.filter((library) => {
+      if (library.isNative) return true;
+      const classifier = library.classifier?.toLowerCase();
+      if (!classifier?.startsWith(`natives-${this.platform.name}`)) {
+        return false;
+      }
+      const suffix = classifier.slice(`natives-${this.platform.name}`.length);
+      if (!suffix) return this.platform.arch === 'x64';
+      if (this.platform.arch === 'arm64') {
+        return suffix === '-arm64' || suffix === '-aarch64';
+      }
+      if (this.platform.arch === 'x86') {
+        return suffix === '-x86' || suffix === '-32';
+      }
+      return suffix === '-x64' || suffix === '-64';
+    });
     const destination = safeRelativePath(
       root,
       path.join('versions', version.id, `${version.id}-natives`),

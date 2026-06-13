@@ -59,9 +59,11 @@ const makeService = (baseUrl: string) =>
 
 test('searchMods が project_type/loader/version facet を組み立てて整形する', async (t) => {
   let capturedFacets = '';
+  let capturedIndex = '';
   const server = await startServer((_request, url) => {
     if (url.pathname === '/v2/search') {
       capturedFacets = url.searchParams.get('facets') ?? '';
+      capturedIndex = url.searchParams.get('index') ?? '';
       return {
         json: {
           hits: [
@@ -103,6 +105,61 @@ test('searchMods が project_type/loader/version facet を組み立てて整形�
   assert.equal(hits[0].clientSide, 'required');
   assert.equal(hits[0].serverSide, 'unsupported');
   assert.equal(hits[0].follows, 56);
+  assert.equal(capturedIndex, 'relevance');
+});
+
+test('空検索は人気順、検索時は名前一致だけを優先して返す', async (t) => {
+  const indexes: string[] = [];
+  const queries: Array<string | null> = [];
+  const server = await startServer((_request, url) => {
+    if (url.pathname !== '/v2/search') {
+      return { status: 404, json: {} };
+    }
+    indexes.push(url.searchParams.get('index') ?? '');
+    queries.push(url.searchParams.get('query'));
+    return {
+      json: {
+        hits: [
+          {
+            project_id: 'description-only',
+            slug: 'render-engine',
+            title: 'Render Engine',
+            description: 'Sodium compatible',
+            downloads: 9000,
+          },
+          {
+            project_id: 'prefix',
+            slug: 'sodium-extra',
+            title: 'Sodium Extra',
+            description: '',
+            downloads: 5000,
+          },
+          {
+            project_id: 'exact',
+            slug: 'sodium',
+            title: 'Sodium',
+            description: '',
+            downloads: 1000,
+          },
+        ],
+      },
+    };
+  });
+  t.after(server.close);
+
+  const service = makeService(server.baseUrl);
+  const popular = await service.searchMods('', { loader: 'fabric' });
+  const matches = await service.searchMods('sodium', {
+    loader: 'fabric',
+  });
+
+  assert.equal(popular.length, 3);
+  assert.deepEqual(indexes, ['downloads', 'relevance']);
+  assert.deepEqual(queries, [null, 'sodium']);
+  assert.deepEqual(
+    matches.map((hit) => hit.projectId),
+    ['exact', 'prefix'],
+  );
 });
 
 test('getProject が followers と side サポートを正規化する', async (t) => {
