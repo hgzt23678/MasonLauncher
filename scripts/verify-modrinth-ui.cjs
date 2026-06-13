@@ -1,4 +1,5 @@
 const { app, BrowserWindow } = require('electron');
+const fs = require('node:fs');
 
 const rendererUrl =
   process.env.MASON_RENDERER_URL || 'http://localhost:5173';
@@ -15,6 +16,8 @@ const waitFor = async (window, expression, timeoutMs = 15_000) => {
 const run = async () => {
   await app.whenReady();
   const window = new BrowserWindow({
+    width: 1120,
+    height: 720,
     show: false,
     webPreferences: {
       contextIsolation: true,
@@ -27,6 +30,32 @@ const run = async () => {
     window,
     `document.querySelector('[data-profile-id="forge-profile"] [data-action="edit"]') !== null`,
   );
+  const cardMetrics = await window.webContents.executeJavaScript(`(() =>
+    [...document.querySelectorAll('.profile-card')].map((card) => {
+      const cardBounds = card.getBoundingClientRect();
+      const actionBounds = card.querySelector('.profile-card-actions')
+        ?.getBoundingClientRect();
+      return {
+        width: Math.round(cardBounds.width),
+        height: Math.round(cardBounds.height),
+        actionTop: Math.round(actionBounds?.top ?? 0),
+        actionBottom: Math.round(actionBounds?.bottom ?? 0)
+      };
+    })
+  )()`);
+  if (
+    cardMetrics.length === 0 ||
+    cardMetrics.some((card) => card.width > 232 || card.height > 240) ||
+    new Set(cardMetrics.map((card) => card.actionBottom)).size !== 1
+  ) {
+    throw new Error(
+      `Profile card layout is inconsistent: ${JSON.stringify(cardMetrics)}`,
+    );
+  }
+  if (process.env.MASON_PROFILE_UI_SCREENSHOT) {
+    const image = await window.webContents.capturePage();
+    fs.writeFileSync(process.env.MASON_PROFILE_UI_SCREENSHOT, image.toPNG());
+  }
   await window.webContents.executeJavaScript(
     `document.querySelector('[data-profile-id="forge-profile"] [data-action="edit"]').click()`,
   );
@@ -40,7 +69,9 @@ const run = async () => {
     query: document.querySelector('#mod-search-input')?.value ?? '',
     editorOpen: document.querySelector('#profile-modal')?.hasAttribute('hidden') === false
   }))()`);
-  console.log(`MODRINTH_UI_PASS ${JSON.stringify(result)}`);
+  console.log(
+    `MODRINTH_UI_PASS ${JSON.stringify({ ...result, cardMetrics })}`,
+  );
   window.destroy();
   app.exit(0);
 };
