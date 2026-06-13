@@ -132,7 +132,7 @@ const defaultJavaSettings = (): ProfileJavaSettings => ({
   mode: 'auto',
   runtimeId: null,
   customPath: null,
-  preferredDistributions: ['liberica-lite', 'liberica', 'zulu', 'temurin'],
+  preferredDistributions: ['temurin', 'liberica-lite', 'liberica', 'zulu'],
   jvmArgs: [],
 });
 
@@ -694,6 +694,12 @@ let javaRuntimes: JavaRuntimeInfo[] = [];
 let javaRuntimesLoaded = false;
 let pendingCustomJavaPath: string | null = null;
 let showSnapshots = false;
+const popularModsCache = new Map<
+  string,
+  { expiresAt: number; projects: ModrinthSearchHit[] }
+>();
+const popularModsCacheTtlMs = 60_000;
+let modSearchHadQuery = false;
 
 const isModLoader = (loader: ProfileLoader): loader is ModLoader =>
   loader !== 'vanilla';
@@ -1374,8 +1380,8 @@ const updateProfileJavaStatus = () => {
 const javaSettingsToSelectValue = (java: ProfileJavaSettings) => {
   if (java.mode === 'customPath') return 'custom';
   if (java.mode === 'fixed' && java.runtimeId) return `fixed:${java.runtimeId}`;
-  const preferred = java.preferredDistributions[0] ?? 'liberica-lite';
-  return preferred === 'liberica-lite' ? 'auto' : `auto:${preferred}`;
+  const preferred = java.preferredDistributions[0] ?? 'temurin';
+  return preferred === 'temurin' ? 'auto' : `auto:${preferred}`;
 };
 
 const populateProfileJavaSelect = (java: ProfileJavaSettings) => {
@@ -1388,10 +1394,10 @@ const populateProfileJavaSelect = (java: ProfileJavaSettings) => {
     profileJavaSelect.append(option);
     return option;
   };
-  appendOption('auto', '自動（推奨: Liberica Lite）');
+  appendOption('auto', '自動（推奨: Eclipse Temurin）');
+  appendOption('auto:liberica-lite', '自動 / Liberica Lite');
   appendOption('auto:liberica', '自動 / Liberica Standard');
   appendOption('auto:zulu', '自動 / Azul Zulu');
-  appendOption('auto:temurin', '自動 / Eclipse Temurin');
   for (const runtime of javaRuntimes) {
     if (runtime.source === 'mojang' || !runtime.verified) continue;
     appendOption(
@@ -1503,6 +1509,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   if (deleteProfileButton) deleteProfileButton.hidden = !profile;
   modSearchResults?.replaceChildren();
   if (modSearchInput) (modSearchInput as MdEl).value = '';
+  modSearchHadQuery = false;
   modLoaderBuilds = [];
   installedMods = [];
   if (profileForgeVersionSelect) {
@@ -1534,17 +1541,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
     );
     if (profile?.id) {
       void loadInstalledMods(profile.id);
-      void api
-        .modrinthSearchMods(profile.id, '')
-        .then(renderModSearchResults)
-        .catch((error) =>
-          showToast(
-            error instanceof Error
-              ? error.message
-              : '人気MODを読み込めませんでした。',
-            true,
-          ),
-        );
+      void loadPopularModsForCurrentInstance(profile.id);
     }
   }
 };
@@ -1660,6 +1657,51 @@ const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
     add.textContent = installed ? '追加済み' : 'ダウンロード';
     item.append(icon, copy, add);
     modSearchResults.append(item);
+  }
+};
+
+const renderModSearchStatus = (message: string, retry = false) => {
+  if (!modSearchResults) return;
+  modSearchResults.replaceChildren();
+  const status = document.createElement('p');
+  status.className = 'empty-mod-message';
+  status.textContent = message;
+  modSearchResults.append(status);
+  if (retry) {
+    const button = document.createElement(
+      'md-outlined-button',
+    ) as unknown as HTMLButtonElement;
+    button.dataset.action = 'retry-popular';
+    button.textContent = '再試行';
+    modSearchResults.append(button);
+  }
+};
+
+const loadPopularModsForCurrentInstance = async (
+  profileId: string,
+  force = false,
+) => {
+  const profile = currentState?.profiles.find(
+    (candidate) => candidate.id === profileId,
+  );
+  if (!profile || !isModLoader(profile.loaderType)) return;
+  const cacheKey =
+    `${profile.id}:${profile.loaderType}:${profile.minecraftVersion}`;
+  const cached = popularModsCache.get(cacheKey);
+  if (!force && cached && cached.expiresAt > Date.now()) {
+    renderModSearchResults(cached.projects);
+    return;
+  }
+  renderModSearchStatus('人気MODを読み込んでいます...');
+  try {
+    const projects = await api.modrinthSearchMods(profile.id, '');
+    popularModsCache.set(cacheKey, {
+      expiresAt: Date.now() + popularModsCacheTtlMs,
+      projects,
+    });
+    renderModSearchResults(projects);
+  } catch {
+    renderModSearchStatus('人気MODの取得に失敗しました', true);
   }
 };
 
@@ -1832,6 +1874,10 @@ document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
         ? editorProfile()?.loaderVersion ?? ''
         : '',
     );
+    const profile = editorProfile();
+    if (profile?.loaderType === tab) {
+      void loadPopularModsForCurrentInstance(profile.id);
+    }
   }
 });
 
@@ -1867,11 +1913,17 @@ modSearchButton?.addEventListener('click', async () => {
   try {
     const state = await saveProfileEditor(false);
     if (!state) return;
-    const projects = await api.modrinthSearchMods(
-      state.selectedProfileId,
-      ((modSearchInput as MdEl)?.value as string) ?? '',
-    );
-    renderModSearchResults(projects);
+    const query = String((modSearchInput as MdEl)?.value ?? '').trim();
+    modSearchHadQuery = query.length > 0;
+    if (!query) {
+      await loadPopularModsForCurrentInstance(state.selectedProfileId, true);
+    } else {
+      const projects = await api.modrinthSearchMods(
+        state.selectedProfileId,
+        query,
+      );
+      renderModSearchResults(projects);
+    }
   } catch (error) {
     showToast(
       error instanceof Error ? error.message : 'MODを検索できませんでした。',
@@ -1887,7 +1939,26 @@ modSearchInput?.addEventListener('keydown', (event) => {
   if ((event as KeyboardEvent).key === 'Enter') modSearchButton?.click();
 });
 
+modSearchInput?.addEventListener('input', () => {
+  const query = String((modSearchInput as MdEl)?.value ?? '').trim();
+  if (query) {
+    modSearchHadQuery = true;
+    return;
+  }
+  if (modSearchHadQuery && profileIdInput?.value) {
+    modSearchHadQuery = false;
+    void loadPopularModsForCurrentInstance(profileIdInput.value);
+  }
+});
+
 modSearchResults?.addEventListener('click', async (event) => {
+  const retry = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-action="retry-popular"]',
+  );
+  if (retry && profileIdInput?.value) {
+    void loadPopularModsForCurrentInstance(profileIdInput.value, true);
+    return;
+  }
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
     '[data-project]',
   );
@@ -2232,7 +2303,7 @@ javaAddCustomButton?.addEventListener('click', async () => {
 
 javaInstallButton?.addEventListener('click', async () => {
   const distribution = String(
-    (javaInstallDistribution as MdEl)?.value ?? 'liberica-lite',
+    (javaInstallDistribution as MdEl)?.value ?? 'temurin',
   ) as JavaDistributionId;
   const major = Number((javaInstallMajor as MdEl)?.value ?? 21);
   (javaInstallButton as MdEl).disabled = true;

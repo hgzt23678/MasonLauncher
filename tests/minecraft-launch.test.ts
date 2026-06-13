@@ -226,6 +226,8 @@ test('ProcessRunnerはshellを使わずtokenをログでマスクする', () => 
   assert.equal(captured?.command, 'C:\\Java Runtime\\bin\\javaw.exe');
   assert.equal(captured?.options?.shell, false);
   assert.equal(captured?.options?.windowsHide, false);
+  assert.equal(captured?.options?.detached, false);
+  assert.deepEqual(captured?.options?.stdio, ['ignore', 'pipe', 'pipe']);
   assert.equal(captured?.options?.cwd, 'C:\\Game Path');
   assert.deepEqual(captured?.args, [
     '-cp',
@@ -318,7 +320,11 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
       metadata: {
         instanceId: 'test-instance',
         versionId: '1.20.1',
+        minecraftVersion: '1.20.1',
+        loaderType: 'vanilla',
+        loaderVersion: null,
         javaPath: 'java',
+        javaDistribution: 'temurin',
         javaMajor: 17,
         javaArch: 'x64',
         gameDir: root,
@@ -357,6 +363,11 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
   const log = await fs.readFile(launcherLogPath, 'utf8');
   assert.match(log, /"windowConfirmed":false/);
   assert.match(log, /"elapsedMs":16000/);
+  assert.match(log, /"javaDistribution":"temurin"/);
+  assert.match(log, /"loaderType":"vanilla"/);
+  assert.match(log, /"shell":false/);
+  assert.match(log, /"windowsHide":false/);
+  assert.match(log, /"detached":false/);
   assert.doesNotMatch(log, /top-secret-token/);
   assert.doesNotMatch(log, /latest-log-secret/);
   assert.doesNotMatch(log, /stdout-secret-token/);
@@ -400,7 +411,11 @@ test('XMCL init log does not count as a confirmed Minecraft window', async (t) =
       metadata: {
         instanceId: 'test-instance',
         versionId: '1.12.2',
+        minecraftVersion: '1.12.2',
+        loaderType: 'vanilla',
+        loaderVersion: null,
         javaPath: 'java',
+        javaDistribution: 'temurin',
         javaMajor: 8,
         javaArch: 'x64',
         gameDir: root,
@@ -497,7 +512,11 @@ test('a verified visible window is the only event that confirms the screen', asy
       metadata: {
         instanceId: 'test-instance',
         versionId: '1.20.1',
+        minecraftVersion: '1.20.1',
+        loaderType: 'vanilla',
+        loaderVersion: null,
         javaPath: 'java',
+        javaDistribution: 'temurin',
         javaMajor: 17,
         javaArch: 'x64',
         gameDir: root,
@@ -592,7 +611,11 @@ test('a window that disappears immediately is not treated as a successful launch
       metadata: {
         instanceId: 'test-instance',
         versionId: '1.20.1',
+        minecraftVersion: '1.20.1',
+        loaderType: 'vanilla',
+        loaderVersion: null,
         javaPath: 'java',
+        javaDistribution: 'temurin',
         javaMajor: 17,
         javaArch: 'x64',
         gameDir: root,

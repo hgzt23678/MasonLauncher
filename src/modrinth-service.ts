@@ -502,7 +502,9 @@ export class ModrinthService {
   ): Promise<ModrinthSearchHit[]> {
     const url = new URL(`${this.apiBase}/search`);
     const trimmed = query.trim();
-    url.searchParams.set('query', trimmed);
+    if (trimmed) {
+      url.searchParams.set('query', trimmed);
+    }
     const facets: string[][] = [['project_type:mod']];
     if (options.loader) {
       facets.push([`categories:${options.loader}`]);

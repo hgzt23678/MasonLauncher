@@ -1639,7 +1639,13 @@ const registerIpcHandlers = () => {
         },
         event.sender,
         instanceDirectory,
-        { javaSettings: profile.java, instanceId: profile.id },
+        {
+          javaSettings: profile.java,
+          instanceId: profile.id,
+          minecraftVersion: profile.minecraftVersion,
+          loaderType: profile.loaderType,
+          loaderVersion: profile.loaderVersion,
+        },
       );
       return offlineOnly
         ? {

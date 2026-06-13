@@ -1,17 +1,21 @@
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import {
+  appendFileSync,
+  promises as fs,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import type { WebContents } from 'electron';
 import { AuthService } from '../src/auth-service';
 import {
   defaultJavaSettings,
   JavaRuntimeService,
+  probeJavaExecutable,
 } from '../src/java-runtime-service';
 import { MinecraftDownloader } from '../src/minecraft-downloader';
 import { MinecraftLaunchResolver } from '../src/minecraft-launch-resolver';
+import { ModLoaderService } from '../src/mod-loader-service';
 import {
-  MinecraftService,
   resolveLaunchJavaExecutable,
   validateMinecraftNatives,
 } from '../src/minecraft-service';
@@ -24,11 +28,35 @@ import type {
   LauncherLogStage,
 } from '../src/diagnostics';
 
-const requestedVersions = process.argv.slice(2);
-const versions =
-  requestedVersions.length > 0
-    ? requestedVersions
-    : ['26.1', '1.12.2', '1.16.5'];
+type VerificationTarget = {
+  loader: 'vanilla' | 'fabric' | 'neoforge';
+  minecraftVersion: string;
+  loaderVersion?: string;
+};
+
+const parseTarget = (value: string): VerificationTarget => {
+  const [loader, minecraftVersion, loaderVersion] = value.split(':');
+  if (
+    loader === 'fabric' ||
+    loader === 'neoforge'
+  ) {
+    if (!minecraftVersion || !loaderVersion) {
+      throw new Error(`Invalid loader target: ${value}`);
+    }
+    return { loader, minecraftVersion, loaderVersion };
+  }
+  if (loader === 'vanilla' && minecraftVersion) {
+    return { loader, minecraftVersion };
+  }
+  return { loader: 'vanilla', minecraftVersion: value };
+};
+
+const requestedTargets = process.argv.slice(2);
+const targets = (
+  requestedTargets.length > 0
+    ? requestedTargets
+    : ['vanilla:26.1', 'vanilla:1.12.2', 'vanilla:1.16.5']
+).map(parseTarget);
 const timeoutMs = 120_000;
 const appData = process.env.APPDATA;
 if (!appData) throw new Error('APPDATA is not available.');
@@ -38,13 +66,32 @@ const userData =
 
 app.setName('Mason Launcher');
 app.setPath('userData', userData);
+const verificationResultPath =
+  process.env.MASON_VERIFY_RESULT_PATH?.trim() ||
+  path.join(userData, 'verification-results.json');
+const verificationProgressPath =
+  process.env.MASON_VERIFY_PROGRESS_PATH?.trim() ||
+  path.join(userData, 'verification-progress.log');
+
+const recordProgress = (message: string) => {
+  appendFileSync(
+    verificationProgressPath,
+    `${new Date().toISOString()} ${message}\n`,
+    'utf8',
+  );
+};
 
 type VerificationResult = {
   versionId: string;
+  minecraftVersion: string;
+  loader: VerificationTarget['loader'];
+  loaderVersion?: string;
   success: boolean;
   pid?: number;
   javaPath?: string;
   javaMajor?: number | null;
+  javaArch?: string | null;
+  javaDistribution?: string;
   mainClass?: string;
   classpathEntries?: number;
   windowReady?: boolean;
@@ -70,6 +117,14 @@ const log = (
   console.log(
     JSON.stringify({
       timestamp: new Date().toISOString(),
+      level,
+      stage,
+      message,
+      detail: safeDetail,
+    }),
+  );
+  recordProgress(
+    JSON.stringify({
       level,
       stage,
       message,
@@ -109,8 +164,10 @@ const waitForWindow = (
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
+      env: process.env,
       shell: false,
       windowsHide: false,
+      detached: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const pid = child.pid;
@@ -208,6 +265,7 @@ const waitForWindow = (
 
 const run = async () => {
   await app.whenReady();
+  writeFileSync(verificationProgressPath, '', 'utf8');
   const settings = JSON.parse(
     await fs.readFile(
       path.join(userData, 'launcher-settings.json'),
@@ -239,66 +297,39 @@ const run = async () => {
   );
   const javaService = new JavaRuntimeService(runtimeRoot, log);
   const resolver = new MinecraftLaunchResolver(log);
-  const minecraftService = new MinecraftService(
+  const modLoaderService = new ModLoaderService(
     async () => settings.gameDirectory,
-    runtimeRoot,
     log,
-    javaService,
+    {
+      prepareInstalledVersion: async (versionId, offlineOnly) =>
+        downloader.prepareInstalledVersion(versionId, () => undefined, {
+          offlineOnly,
+        }),
+    },
   );
-  const progressSender = {
-    isDestroyed: () => false,
-    send: (): void => undefined,
-  } as unknown as WebContents;
   const results: VerificationResult[] = [];
 
-  for (const versionId of versions) {
-    console.log(`VERIFY_START ${versionId}`);
+  for (const target of targets) {
+    const targetLabel = [
+      target.loader,
+      target.minecraftVersion,
+      target.loaderVersion,
+    ].filter(Boolean).join(':');
+    console.log(`VERIFY_START ${targetLabel}`);
+    recordProgress(`VERIFY_START ${targetLabel}`);
     try {
-      const installedVersionJson = path.join(
-        settings.gameDirectory,
-        'versions',
-        versionId,
-        `${versionId}.json`,
-      );
-      const prepared = await fs.access(installedVersionJson).then(
-        () =>
-          downloader.prepareInstalledVersion(versionId, () => undefined, {
-            offlineOnly: true,
-          }),
-        () => downloader.prepareVersion(versionId),
-      );
+      const baseVersionId = target.minecraftVersion;
+      let prepared = await downloader.prepareVersion(baseVersionId);
       const component =
         prepared.version.javaVersion?.component || 'jre-legacy';
-      const officialJava = path.join(
-        runtimeRoot,
-        component,
-        'bin',
-        process.platform === 'win32' ? 'java.exe' : 'java',
-      );
-      try {
-        await fs.access(officialJava);
-      } catch {
-        const remoteVersion = (
-          await minecraftService.getRemoteVersions()
-        ).find((candidate) => candidate.id === versionId);
-        if (!remoteVersion) {
-          throw new Error(
-            `Version ${versionId} disappeared from the Mojang manifest.`,
-          );
-        }
-        await minecraftService.installVersion(
-          remoteVersion,
-          progressSender,
-        );
-      }
-      const java = await javaService.resolveForLaunch({
+      let java = await javaService.resolveForLaunch({
         settings: defaultJavaSettings(),
         minecraftVersion:
           prepared.version.minecraftVersion ?? prepared.version.id,
         metadataMajorVersion:
           prepared.version.javaVersion?.majorVersion,
-        offlineOnly: true,
-        instanceId: `verification-${versionId}`,
+        offlineOnly: false,
+        instanceId: `verification-${targetLabel}`,
         mojangFallback: async () => {
           const executable = path.join(
             runtimeRoot,
@@ -310,6 +341,35 @@ const run = async () => {
           return executable;
         },
       });
+      let versionId = baseVersionId;
+      if (target.loader !== 'vanilla') {
+        versionId = await modLoaderService.ensureInstalled({
+          loader: target.loader,
+          minecraftVersion: baseVersionId,
+          loaderVersion: target.loaderVersion as string,
+          resolvedVersionId:
+            target.loader === 'fabric'
+              ? `${baseVersionId}-fabric${target.loaderVersion}`
+              : `neoforge-${target.loaderVersion}`,
+          javaPath: java.javaPath,
+          offlineOnly: false,
+        });
+        prepared = await downloader.prepareInstalledVersion(
+          versionId,
+          () => undefined,
+          { offlineOnly: true },
+        );
+        java = await javaService.resolveForLaunch({
+          settings: defaultJavaSettings(),
+          minecraftVersion:
+            prepared.version.minecraftVersion ?? baseVersionId,
+          metadataMajorVersion:
+            prepared.version.javaVersion?.majorVersion,
+          offlineOnly: true,
+          instanceId: `verification-${targetLabel}`,
+        });
+      }
+      const javaProbe = await probeJavaExecutable(java.javaPath);
       const matchingProfile = settings.profiles?.find(
         (profile) =>
           profile.resolvedVersionId === versionId ||
@@ -318,12 +378,17 @@ const run = async () => {
       const gamePath =
         matchingProfile?.instanceDir ??
         path.join(
-          settings.gameDirectory,
-          'mason-launcher',
-          'verification',
-          versionId,
+          userData,
+          'instances',
+          `verification-${targetLabel.replace(/[^a-zA-Z0-9.-]/g, '-')}`,
+          'instance',
         );
       await fs.mkdir(gamePath, { recursive: true });
+      await Promise.all(
+        ['mods', 'config', 'saves', 'logs'].map((name) =>
+          fs.mkdir(path.join(gamePath, name), { recursive: true }),
+        ),
+      );
       await validateMinecraftNatives(prepared.nativesDirectory);
       const launchJavaPath = await resolveLaunchJavaExecutable(java.javaPath);
       const resolved = await resolver.resolve({
@@ -347,31 +412,52 @@ const run = async () => {
       );
       const result: VerificationResult = {
         versionId,
+        minecraftVersion: baseVersionId,
+        loader: target.loader,
+        loaderVersion: target.loaderVersion,
         success: processResult.windowReady === true,
         ...processResult,
         javaPath: launchJavaPath,
         javaMajor: java.majorVersion,
+        javaArch: javaProbe.arch,
+        javaDistribution: java.distribution,
         mainClass: resolved.mainClass,
         classpathEntries: resolved.classpathEntries,
       };
       results.push(result);
       console.log(`VERIFY_PASS ${JSON.stringify(result)}`);
+      recordProgress(`VERIFY_PASS ${JSON.stringify(result)}`);
     } catch (error) {
       const result: VerificationResult = {
-        versionId,
+        versionId:
+          target.loader === 'vanilla'
+            ? target.minecraftVersion
+            : `${target.loader}:${target.minecraftVersion}:${target.loaderVersion}`,
+        minecraftVersion: target.minecraftVersion,
+        loader: target.loader,
+        loaderVersion: target.loaderVersion,
         success: false,
         error: error instanceof Error ? error.message : String(error),
       };
       results.push(result);
       console.error(`VERIFY_FAIL ${JSON.stringify(result)}`);
+      recordProgress(`VERIFY_FAIL ${JSON.stringify(result)}`);
     }
   }
 
+  writeFileSync(
+    verificationResultPath,
+    JSON.stringify(results, null, 2),
+    'utf8',
+  );
   console.log(`VERIFY_RESULTS ${JSON.stringify(results)}`);
   app.exit(results.every((result) => result.success) ? 0 : 1);
 };
 
 void run().catch((error) => {
+  recordProgress(
+    `VERIFY_FATAL ${error instanceof Error ? error.stack : String(error)}`,
+  );
   console.error(
     `VERIFY_FATAL ${error instanceof Error ? error.stack : String(error)}`,
   );

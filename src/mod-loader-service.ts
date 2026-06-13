@@ -1,7 +1,11 @@
-import { promises as fs } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { createWriteStream, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { promisify } from 'node:util';
 import { XMLParser } from 'fast-xml-parser';
-import { installNeoForged } from '@xmcl/installer';
 import type { ResolvedVersion } from '@xmcl/core';
 import type {
   LauncherLogLevel,
@@ -13,6 +17,7 @@ const FABRIC_META = 'https://meta.fabricmc.net';
 const NEOFORGE_MAVEN = 'https://maven.neoforged.net/releases';
 const NEOFORGE_METADATA =
   `${NEOFORGE_MAVEN}/net/neoforged/neoforge/maven-metadata.xml`;
+const execFileAsync = promisify(execFile);
 
 export type ModLoaderType = 'forge' | 'neoforge' | 'fabric';
 
@@ -37,7 +42,16 @@ type PreparedVersion = {
 
 type ModLoaderServiceOptions = {
   fetch?: typeof fetch;
-  installNeoForge?: typeof installNeoForged;
+  installNeoForge?: (
+    project: 'forge' | 'neoforge',
+    version: string,
+    minecraft: string,
+    options: {
+      java: string;
+      side: 'client';
+      mavenHost: string[];
+    },
+  ) => Promise<string>;
   prepareInstalledVersion: (
     versionId: string,
     offlineOnly: boolean,
@@ -123,7 +137,9 @@ export const parseNeoForgeMavenMetadata = (
 
 export class ModLoaderService {
   private readonly fetchImpl: typeof fetch;
-  private readonly installNeoForgeImpl: typeof installNeoForged;
+  private readonly installNeoForgeImpl: NonNullable<
+    ModLoaderServiceOptions['installNeoForge']
+  >;
 
   constructor(
     private readonly gameDirectory: () => Promise<string>,
@@ -132,7 +148,13 @@ export class ModLoaderService {
   ) {
     this.fetchImpl = options.fetch ?? fetch;
     this.installNeoForgeImpl =
-      options.installNeoForge ?? installNeoForged;
+      options.installNeoForge ??
+      ((_project, version, minecraft, installOptions) =>
+        this.installNeoForgeClient(
+          version,
+          minecraft,
+          installOptions.java,
+        ));
   }
 
   private async request(url: string, label: string) {
@@ -266,6 +288,116 @@ export class ModLoaderService {
       versionId,
       target,
     });
+    return versionId;
+  }
+
+  private async installNeoForgeClient(
+    loaderVersion: string,
+    root: string,
+    javaPath: string,
+  ) {
+    const base =
+      `${NEOFORGE_MAVEN}/net/neoforged/neoforge/${loaderVersion}/` +
+      `neoforge-${loaderVersion}-installer.jar`;
+    const directory = path.join(
+      root,
+      'libraries',
+      'net',
+      'neoforged',
+      'neoforge',
+      loaderVersion,
+    );
+    const installer = path.join(
+      directory,
+      `neoforge-${loaderVersion}-installer.jar`,
+    );
+    const expectedSha1 = (
+      await (await this.request(`${base}.sha1`, 'NeoForge installer SHA-1'))
+        .text()
+    ).trim().split(/\s+/)[0]?.toLowerCase();
+    if (!/^[a-f0-9]{40}$/.test(expectedSha1)) {
+      throw new MinecraftError(
+        'NeoForge installer SHA-1 metadata is invalid.',
+        'verification',
+        'NEOFORGE_INSTALLER_SHA1_INVALID',
+        { loaderVersion },
+      );
+    }
+    let existingSha1 = '';
+    try {
+      existingSha1 = createHash('sha1')
+        .update(await fs.readFile(installer))
+        .digest('hex');
+    } catch {
+      // Download below.
+    }
+    if (existingSha1 !== expectedSha1) {
+      const response = await this.request(base, 'NeoForge installer');
+      if (!response.body) {
+        throw new MinecraftError(
+          'NeoForge installer response was empty.',
+          'download',
+          'NEOFORGE_INSTALLER_EMPTY',
+          { loaderVersion },
+        );
+      }
+      await fs.mkdir(directory, { recursive: true });
+      const temporary = `${installer}.tmp-${process.pid}`;
+      await fs.rm(temporary, { force: true });
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        createWriteStream(temporary, { flags: 'wx' }),
+      );
+      const actualSha1 = createHash('sha1')
+        .update(await fs.readFile(temporary))
+        .digest('hex');
+      if (actualSha1 !== expectedSha1) {
+        await fs.rm(temporary, { force: true });
+        throw new MinecraftError(
+          'NeoForge installer SHA-1 verification failed.',
+          'verification',
+          'NEOFORGE_INSTALLER_SHA1_MISMATCH',
+          { loaderVersion },
+        );
+      }
+      await fs.rm(installer, { force: true });
+      await fs.rename(temporary, installer);
+    }
+
+    this.log('info', 'forge', 'Running the official NeoForge client installer.', {
+      loaderVersion,
+      installer,
+      javaPath,
+    });
+    try {
+      const { stdout, stderr } = await execFileAsync(
+        javaPath,
+        ['-jar', installer, '--installClient', root],
+        {
+          cwd: root,
+          windowsHide: true,
+          timeout: 600_000,
+          maxBuffer: 64 * 1024 * 1024,
+        },
+      );
+      this.log('info', 'forge', 'NeoForge client installer completed.', {
+        loaderVersion,
+        stdoutTail: stdout.slice(-4_000),
+        stderrTail: stderr.slice(-4_000),
+      });
+    } catch (error) {
+      throw new MinecraftError(
+        'NeoForge client installer process failed.',
+        'forge-processor',
+        'NEOFORGE_INSTALLER_PROCESS_FAILED',
+        { loaderVersion, installer },
+        { cause: error },
+      );
+    }
+    const versionId = `neoforge-${loaderVersion}`;
+    await fs.access(
+      path.join(root, 'versions', versionId, `${versionId}.json`),
+    );
     return versionId;
   }
 

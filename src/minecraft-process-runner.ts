@@ -55,7 +55,11 @@ type ProcessCallbacks = {
 export type MinecraftLaunchLogMetadata = {
   instanceId: string;
   versionId: string;
+  minecraftVersion: string;
+  loaderType: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  loaderVersion: string | null;
   javaPath: string;
+  javaDistribution: string;
   javaMajor: number | null;
   javaArch: string;
   gameDir: string;
@@ -335,10 +339,12 @@ export class MinecraftProcessRunner {
     }
     const options: SpawnOptions = {
       cwd: request.cwd,
+      env: process.env,
       shell: false,
       // STARTF_USESHOWWINDOW/SW_HIDE also hides LWJGL's first GUI window.
       // Minecraft uses javaw.exe on Windows to avoid a console window instead.
       windowsHide: false,
+      detached: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     };
     const validated = validateSpawnRequest({
@@ -379,6 +385,10 @@ export class MinecraftProcessRunner {
         ...request.metadata,
         effectiveXms,
         effectiveXmx,
+        shell: false,
+        windowsHide: false,
+        detached: false,
+        stdio: ['ignore', 'pipe', 'pipe'],
         command: validated.command,
         commandLine: [validated.command, ...redactedArgs]
           .map(quoteForLog)
@@ -417,6 +427,10 @@ export class MinecraftProcessRunner {
       effectiveXms,
       effectiveXmx,
       cwd: validated.options?.cwd,
+      shell: false,
+      windowsHide: false,
+      detached: false,
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
 
     let processHandle: ChildProcess;

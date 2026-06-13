@@ -82,6 +82,9 @@ type LaunchSettings = {
 type JavaLaunchOptions = {
   javaSettings?: ProfileJavaSettings;
   instanceId?: string;
+  minecraftVersion?: string;
+  loaderType?: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  loaderVersion?: string | null;
 };
 
 type LogWriter = (
@@ -635,7 +638,7 @@ export class MinecraftService {
   }
 
   /**
-   * Resolves the launch Java. Prefers JavaRuntimeService (Liberica-first auto
+   * Resolves the launch Java. Prefers JavaRuntimeService (Temurin-first auto
    * selection / per-instance settings); the legacy Mojang runtime path is the
    * compatibility fallback and the only path when no JavaRuntimeService is
    * injected (tests).
@@ -647,7 +650,15 @@ export class MinecraftService {
     options: JavaLaunchOptions = {},
   ) {
     if (!this.javaService) {
-      return this.ensureJava(version, sender, offlineOnly);
+      const javaPath = await this.ensureJava(version, sender, offlineOnly);
+      return {
+        javaPath,
+        majorVersion: version.javaVersion?.majorVersion ?? 8,
+        distribution: 'mojang',
+        runtimeId: null,
+        source: 'mojang-fallback' as const,
+        requiredMajorVersion: version.javaVersion?.majorVersion ?? 8,
+      };
     }
     const selection = await this.javaService.resolveForLaunch({
       settings: options.javaSettings ?? defaultJavaSettings(),
@@ -664,7 +675,7 @@ export class MinecraftService {
         }),
       mojangFallback: () => this.ensureJava(version, sender, offlineOnly),
     });
-    return selection.javaPath;
+    return selection;
   }
 
   async ensureForge(
@@ -704,7 +715,7 @@ export class MinecraftService {
       return await this.forgeService.ensureInstalled(
         minecraftVersion,
         loaderVersion,
-        java,
+        java.javaPath,
         (progress) =>
           this.report(sender, {
             phase: 'forge',
@@ -759,12 +770,14 @@ export class MinecraftService {
           { cause: error },
         );
       }
-      javaPath = await this.provisionJava(
-        baseVersion,
-        sender,
-        false,
-        javaOptions,
-      );
+      javaPath = (
+        await this.provisionJava(
+          baseVersion,
+          sender,
+          false,
+          javaOptions,
+        )
+      ).javaPath;
     }
 
     this.report(sender, {
@@ -818,12 +831,13 @@ export class MinecraftService {
         (progress) => this.reportDownload(sender, progress),
         { offlineOnly: session.mode === 'authenticated-offline' },
       );
-      const javaPath = await this.provisionJava(
+      const javaSelection = await this.provisionJava(
         prepared.version,
         sender,
         session.mode === 'authenticated-offline',
         javaOptions,
       );
+      const javaPath = javaSelection.javaPath;
       const javaProbe = await probeJavaExecutable(javaPath);
       const requiredJavaMajor = prepared.version.javaVersion?.majorVersion ?? 8;
       if (
@@ -883,6 +897,7 @@ export class MinecraftService {
       this.log('info', 'java', 'Minecraft起動前のJava・メモリ・natives検証が完了しました。', {
         probeJavaPath: javaPath,
         launchJavaPath,
+        javaDistribution: javaSelection.distribution,
         javaMajor: javaProbe.majorVersion,
         javaArch: javaProbe.arch,
         minMemoryMb: settings.minMemory,
@@ -937,7 +952,14 @@ export class MinecraftService {
           metadata: {
             instanceId,
             versionId,
+            minecraftVersion:
+              javaOptions.minecraftVersion ??
+              prepared.version.minecraftVersion ??
+              versionId,
+            loaderType: javaOptions.loaderType ?? 'vanilla',
+            loaderVersion: javaOptions.loaderVersion ?? null,
             javaPath: resolved.command,
+            javaDistribution: javaSelection.distribution,
             javaMajor:
               javaProbe.majorVersion ??
               parseJavaMajorVersion(resolved.javaVersion) ??

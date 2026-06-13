@@ -1,7 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
-  createReadStream,
   createWriteStream,
   promises as fs,
 } from 'node:fs';
@@ -24,6 +23,7 @@ import { parseJavaMajorVersion } from './minecraft-launch-resolver';
 const execFileAsync = promisify(execFile);
 
 const discoApiBase = 'https://api.foojay.io/disco/v3.0';
+const adoptiumApiBase = 'https://api.adoptium.net/v3';
 const userAgent =
   'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
 const maxJavaArchiveBytes = 512 * 1024 * 1024;
@@ -47,10 +47,10 @@ export const knownDistributions = [
 export type JavaDistributionId = (typeof knownDistributions)[number];
 
 export const defaultPreferredDistributions: JavaDistributionId[] = [
+  'temurin',
   'liberica-lite',
   'liberica',
   'zulu',
-  'temurin',
 ];
 
 export const distributionLabels: Record<JavaDistributionId, string> = {
@@ -330,6 +330,8 @@ type DiscoPackage = {
     pkg_info_uri?: string;
     pkg_download_redirect?: string;
   };
+  checksum?: string;
+  checksum_type?: string;
 };
 
 type DiscoPackageInfo = {
@@ -343,6 +345,21 @@ export type JavaInstallProgress = {
   percent: number;
   message: string;
   file?: string;
+};
+
+type AdoptiumAsset = {
+  binary?: {
+    package?: {
+      checksum?: string;
+      link?: string;
+      name?: string;
+      size?: number;
+    };
+  };
+  release_name?: string;
+  version?: {
+    semver?: string;
+  };
 };
 
 export type JavaChecksumAlgorithm = 'sha1' | 'sha256';
@@ -467,6 +484,7 @@ export class JavaRuntimeService {
   private readonly platform: NodeJS.Platform;
   private readonly arch: string;
   private readonly discoBase: string;
+  private readonly adoptiumBase: string;
   private installInProgress = false;
 
   constructor(
@@ -478,6 +496,7 @@ export class JavaRuntimeService {
       platform?: NodeJS.Platform;
       arch?: string;
       discoApiBase?: string;
+      adoptiumApiBase?: string;
     } = {},
   ) {
     this.javaRoot = path.join(runtimeRoot, 'java');
@@ -488,6 +507,7 @@ export class JavaRuntimeService {
     this.platform = options.platform ?? process.platform;
     this.arch = options.arch ?? process.arch;
     this.discoBase = options.discoApiBase ?? discoApiBase;
+    this.adoptiumBase = options.adoptiumApiBase ?? adoptiumApiBase;
   }
 
   private javaExecutableName() {
@@ -846,7 +866,7 @@ export class JavaRuntimeService {
     );
   }
 
-  // --- Foojay Disco install ----------------------------------------------------
+  // --- Managed Java distribution install --------------------------------------
 
   private discoOperatingSystem() {
     if (this.platform === 'win32') return 'windows';
@@ -872,7 +892,7 @@ export class JavaRuntimeService {
       });
     } catch (error) {
       throw new MinecraftError(
-        'Java配布API (Foojay Disco) へ接続できません。',
+        'Java配布元の公式APIへ接続できません。',
         'java',
         'JAVA_DISCO_NETWORK_ERROR',
         { url },
@@ -918,6 +938,44 @@ export class JavaRuntimeService {
     return null;
   }
 
+  private async findTemurinPackage(
+    major: number,
+  ): Promise<DiscoPackage | null> {
+    for (const packageType of ['jre', 'jdk'] as const) {
+      const url = new URL(
+        `${this.adoptiumBase}/assets/latest/${major}/hotspot`,
+      );
+      url.searchParams.set('architecture', this.discoArchitecture());
+      url.searchParams.set('heap_size', 'normal');
+      url.searchParams.set('image_type', packageType);
+      url.searchParams.set('jvm_impl', 'hotspot');
+      url.searchParams.set('os', this.discoOperatingSystem());
+      url.searchParams.set('vendor', 'eclipse');
+      const assets = await this.discoJson<AdoptiumAsset[]>(url.toString());
+      const asset = assets.find(
+        (candidate) =>
+          candidate.binary?.package?.link &&
+          candidate.binary.package.name &&
+          candidate.binary.package.checksum,
+      );
+      const pkg = asset?.binary?.package;
+      if (!asset || !pkg?.link || !pkg.name || !pkg.checksum) continue;
+      return {
+        id: asset.release_name ?? pkg.name,
+        distribution: 'temurin',
+        major_version: major,
+        java_version: asset.version?.semver ?? String(major),
+        package_type: packageType,
+        archive_type: this.archiveType(),
+        filename: pkg.name,
+        links: { pkg_download_redirect: pkg.link },
+        checksum: pkg.checksum,
+        checksum_type: 'sha256',
+      };
+    }
+    return null;
+  }
+
   private validateDownloadUrl(value: string) {
     let url: URL;
     try {
@@ -948,8 +1006,26 @@ export class JavaRuntimeService {
 
   private async hashFile(target: string, algorithm: JavaChecksumAlgorithm) {
     const hash = createHash(algorithm);
-    for await (const chunk of createReadStream(target)) {
-      hash.update(chunk as Buffer);
+    const handle = await fs.open(target, 'r');
+    const buffer = Buffer.allocUnsafe(1024 * 1024);
+    const { size } = await handle.stat();
+    let position = 0;
+    try {
+      while (position < size) {
+        const { bytesRead } = await handle.read(
+          buffer,
+          0,
+          buffer.length,
+          position,
+        );
+        if (bytesRead === 0) {
+          throw new Error(`Unexpected end of file while hashing ${target}`);
+        }
+        hash.update(buffer.subarray(0, bytesRead));
+        position += bytesRead;
+      }
+    } finally {
+      await handle.close();
     }
     return hash.digest('hex');
   }
@@ -1106,6 +1182,41 @@ export class JavaRuntimeService {
     onEntry?: (processed: number, total: number) => void,
   ) {
     if (archivePath.endsWith('.zip')) {
+      if (this.platform === 'win32') {
+        const zip = await open(archivePath, {
+          lazyEntries: true,
+          autoClose: false,
+        });
+        let entries = 0;
+        try {
+          const root = path.resolve(destination);
+          for await (const entry of walkEntriesGenerator(zip)) {
+            const target = path.resolve(root, entry.fileName);
+            if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
+              throw new MinecraftError(
+                'Java archive contains an unsafe path.',
+                'java',
+                'JAVA_ARCHIVE_UNSAFE_PATH',
+                { entry: entry.fileName },
+              );
+            }
+            entries += 1;
+          }
+        } finally {
+          zip.close();
+        }
+        await fs.mkdir(destination, { recursive: true });
+        await execFileAsync(
+          'tar',
+          ['-xf', archivePath, '-C', destination],
+          {
+            windowsHide: true,
+            timeout: 300_000,
+          },
+        );
+        onEntry?.(entries, entries);
+        return;
+      }
       const zip = await open(archivePath, {
         lazyEntries: true,
         autoClose: false,
@@ -1229,7 +1340,10 @@ export class JavaRuntimeService {
   ): Promise<JavaRuntimeInfo> {
     const label = `${distributionLabels[distribution]} ${major}`;
     onProgress({ percent: 0, message: `${label} を検索しています` });
-    const pkg = await this.findDiscoPackage(distribution, major);
+    const pkg =
+      distribution === 'temurin'
+        ? await this.findTemurinPackage(major)
+        : await this.findDiscoPackage(distribution, major);
     if (!pkg) {
       throw new MinecraftError(
         `${label} はこの環境 (${this.discoOperatingSystem()}/${this.discoArchitecture()}) 向けに提供されていません。`,
@@ -1239,8 +1353,8 @@ export class JavaRuntimeService {
       );
     }
     let downloadUri = pkg.links.pkg_download_redirect ?? '';
-    let checksum = '';
-    let checksumType = '';
+    let checksum = pkg.checksum ?? '';
+    let checksumType = pkg.checksum_type ?? '';
     if (pkg.links.pkg_info_uri) {
       const info = await this.discoJson<{ result?: DiscoPackageInfo[] }>(
         pkg.links.pkg_info_uri,
@@ -1659,8 +1773,11 @@ export class JavaRuntimeService {
             distributionRank(right.distribution) ||
           sourceRank[left.source] - sourceRank[right.source],
       );
-    if (candidates[0]) {
-      const runtime = candidates[0];
+    const preferredCandidate = candidates.find(
+      (runtime) => runtime.distribution === preferred[0],
+    );
+    if (preferredCandidate) {
+      const runtime = preferredCandidate;
       const selection: ResolvedJavaSelection = {
         javaPath: runtime.path,
         majorVersion: runtime.majorVersion,
@@ -1671,29 +1788,6 @@ export class JavaRuntimeService {
       };
       this.logSelection(selection, input.instanceId, 'auto');
       return selection;
-    }
-
-    // The version JSON names Mojang's matching runtime component. Prefer that
-    // official runtime before trying third-party distributions.
-    if (input.mojangFallback) {
-      try {
-        const javaPath = await input.mojangFallback();
-        const selection: ResolvedJavaSelection = {
-          javaPath,
-          majorVersion: requiredMajor,
-          distribution: 'mojang',
-          runtimeId: null,
-          source: 'mojang-fallback',
-          requiredMajorVersion: requiredMajor,
-        };
-        this.logSelection(selection, input.instanceId, 'auto');
-        return selection;
-      } catch (error) {
-        this.log('warn', 'java', 'Mojang Java runtime is not available yet.', {
-          message: error instanceof Error ? error.message : String(error),
-          requiredMajorVersion: requiredMajor,
-        });
-      }
     }
 
     if (!input.offlineOnly) {
@@ -1729,8 +1823,22 @@ export class JavaRuntimeService {
       }
     }
 
-    // Compatibility fallback: a locally present (or Mojang-provisioned)
-    // runtime keeps existing installs launching when Disco is unreachable.
+    // Compatibility fallback: preserve existing Mojang/system runtimes when
+    // the preferred managed distribution could not be installed.
+    if (candidates[0]) {
+      const runtime = candidates[0];
+      const selection: ResolvedJavaSelection = {
+        javaPath: runtime.path,
+        majorVersion: runtime.majorVersion,
+        distribution: runtime.distribution,
+        runtimeId: runtime.id,
+        source: runtime.source,
+        requiredMajorVersion: requiredMajor,
+      };
+      this.logSelection(selection, input.instanceId, 'auto');
+      return selection;
+    }
+
     if (input.mojangFallback) {
       try {
         const javaPath = await input.mojangFallback();
