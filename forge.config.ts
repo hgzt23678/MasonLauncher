@@ -7,7 +7,13 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 import { FusesPlugin } from '@electron-forge/plugin-fuses';
 import { FuseV1Options, FuseVersion } from '@electron/fuses';
 
+const buildConfiguration =
+  process.env.MASON_BUILD_CONFIGURATION?.toLowerCase() === 'release'
+    ? 'release'
+    : 'debug';
+
 const config: ForgeConfig = {
+  outDir: `out/${buildConfiguration}`,
   packagerConfig: {
     asar: true,
   },

@@ -228,7 +228,15 @@
           <p id="java-install-status" class="forge-status-text" hidden></p>
         </div>
 
-        <section class="developer-log-section">
+        <div class="developer-log-toggle-row">
+          <div>
+            <strong>開発者ログ</strong>
+            <small>認証、Java、ダウンロード、起動処理の詳細を表示します。</small>
+          </div>
+          <md-switch id="developer-log-toggle" aria-label="開発者ログを表示"></md-switch>
+        </div>
+
+        <section class="developer-log-section" id="developer-log-section" hidden>
           <div class="developer-log-heading">
             <div>
               <strong>開発者ログ</strong>

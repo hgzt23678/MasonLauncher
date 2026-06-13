@@ -121,6 +121,7 @@ type LauncherState = {
   settings: {
     minMemory: number;
     maxMemory: number;
+    showDeveloperLogs: boolean;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;

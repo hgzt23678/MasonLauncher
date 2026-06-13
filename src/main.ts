@@ -8,6 +8,7 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   shell,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
@@ -16,6 +17,10 @@ import { Version } from '@xmcl/core';
 import { resolveMicrosoftClientId } from './auth-config';
 import { classifyAuthFailure } from './auth-errors';
 import { AuthService } from './auth-service';
+import {
+  developerLogsVisibleByDefault,
+  normalizeBuildConfiguration,
+} from './build-configuration';
 import { LauncherDiagnostics } from './diagnostics';
 import {
   JavaRuntimeService,
@@ -50,6 +55,7 @@ type LauncherSettings = {
   gameDirectory: string;
   minMemory: number;
   maxMemory: number;
+  showDeveloperLogs: boolean;
   microsoftClientId: string;
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -78,6 +84,10 @@ let authService: AuthService;
 let minecraftService: MinecraftService;
 let javaRuntimeService: JavaRuntimeService;
 let launchWorkflowInProgress = false;
+const buildConfiguration = normalizeBuildConfiguration(
+  __BUILD_CONFIGURATION__,
+);
+const isReleaseBuild = buildConfiguration === 'release';
 const diagnostics = new LauncherDiagnostics((entry) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('launcher:log', entry);
@@ -210,6 +220,7 @@ const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
   minMemory: 1024,
   maxMemory: 4096,
+  showDeveloperLogs: developerLogsVisibleByDefault(buildConfiguration),
   microsoftClientId: __MICROSOFT_CLIENT_ID__.trim(),
   profiles: [
     {
@@ -367,6 +378,10 @@ const readSettings = async (): Promise<LauncherSettings> => {
           : defaults.gameDirectory,
       minMemory,
       maxMemory,
+      showDeveloperLogs:
+        typeof value.showDeveloperLogs === 'boolean'
+          ? value.showDeveloperLogs
+          : defaults.showDeveloperLogs,
       microsoftClientId: resolveMicrosoftClientId(
         value.microsoftClientId,
         defaults.microsoftClientId,
@@ -890,6 +905,7 @@ const getLauncherState = async () => {
     settings: {
       minMemory: settings.minMemory,
       maxMemory: settings.maxMemory,
+      showDeveloperLogs: settings.showDeveloperLogs,
     },
     profiles: settings.profiles,
     selectedProfileId: settings.selectedProfileId,
@@ -1029,6 +1045,9 @@ const registerIpcHandlers = () => {
         settings.minMemory,
         Math.round(update.maxMemory),
       );
+    }
+    if (typeof update.showDeveloperLogs === 'boolean') {
+      settings.showDeveloperLogs = update.showDeveloperLogs;
     }
     await writeSettings(settings);
     return getLauncherState();
@@ -1638,6 +1657,10 @@ const registerIpcHandlers = () => {
 };
 
 const createWindow = () => {
+  if (isReleaseBuild) {
+    Menu.setApplicationMenu(null);
+  }
+
   const mainWindow = new BrowserWindow({
     width: 1120,
     height: 720,
@@ -1645,6 +1668,7 @@ const createWindow = () => {
     minHeight: 620,
     backgroundColor: '#10150f',
     title: appName,
+    autoHideMenuBar: isReleaseBuild,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1653,6 +1677,14 @@ const createWindow = () => {
       webSecurity: true,
     },
   });
+
+  if (isReleaseBuild) {
+    mainWindow.setMenu(null);
+    mainWindow.setMenuBarVisibility(false);
+  } else {
+    mainWindow.setAutoHideMenuBar(false);
+    mainWindow.setMenuBarVisibility(true);
+  }
 
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
     if (!isTrustedRendererUrl(targetUrl)) {

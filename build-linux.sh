@@ -5,14 +5,14 @@
 # Runs: typecheck -> lint -> test -> package/make, stopping on first failure.
 #
 # Usage:
-#   ./build-linux.sh                 # Release (installer artifacts via `make`)
-#   ./build-linux.sh release         # same as above
-#   ./build-linux.sh debug           # Debug (expanded build via `package`)
+#   ./build-linux.sh                 # Debug (expanded build under out/debug)
+#   ./build-linux.sh debug           # same as above
+#   ./build-linux.sh release         # Release artifacts under out/release
 #   ./build-linux.sh release --skip-tests --skip-lint
 #
 set -euo pipefail
 
-CONFIGURATION="release"
+CONFIGURATION="debug"
 SKIP_TESTS=0
 SKIP_LINT=0
 TARGET=""
@@ -33,7 +33,9 @@ if [ -z "$TARGET" ]; then
   if [ "$CONFIGURATION" = "debug" ]; then TARGET="package"; else TARGET="make"; fi
 fi
 
+export MASON_BUILD_CONFIGURATION="$CONFIGURATION"
 if [ "$CONFIGURATION" = "debug" ]; then export NODE_ENV="development"; else export NODE_ENV="production"; fi
+OUTPUT_ROOT="out/$CONFIGURATION"
 
 cd "$(dirname "$0")"
 
@@ -51,6 +53,7 @@ echo
 echo "Mason Launcher - Build"
 echo "Configuration : $CONFIGURATION"
 echo "Target        : $TARGET"
+echo "Output        : $OUTPUT_ROOT"
 echo "Date          : $(date '+%Y-%m-%d %H:%M:%S')"
 
 if ! command -v node >/dev/null 2>&1; then
@@ -84,11 +87,11 @@ fi
 
 case "$TARGET" in
   package)
-    step "electron-forge package  ->  out/"
+    step "electron-forge package  ->  $OUTPUT_ROOT/"
     npm run package
     ;;
   make)
-    step "electron-forge make  ->  out/make/"
+    step "electron-forge make  ->  $OUTPUT_ROOT/make/"
     npm run make
     ;;
   check)

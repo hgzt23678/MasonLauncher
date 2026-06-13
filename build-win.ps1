@@ -6,12 +6,12 @@
     Runs: typecheck -> lint -> test -> package/make
     Stops immediately on any failure.
 .PARAMETER Configuration
-    Release : full checks + Squirrel installer under out/make/   (default)
-    Debug   : full checks + expanded build under out/            (faster, no installer)
+    debug   : full checks + expanded build under out/debug/ (default)
+    release : full checks + Squirrel installer under out/release/
     The Configuration selects a sensible default -Target; pass -Target to override.
 .PARAMETER Target
-    make     : generate Squirrel installer under out/make/
-    package  : expand build under out/  (faster, no installer)
+    make     : generate installer artifacts under out/<configuration>/make/
+    package  : expand build under out/<configuration>/ (faster, no installer)
     check    : typecheck + lint + test only  (no build)
     Defaults to 'make' for Release and 'package' for Debug.
 .PARAMETER SkipTests
@@ -19,14 +19,15 @@
 .PARAMETER SkipLint
     Skip the ESLint step.
 .EXAMPLE
-    .\build.ps1                              # Release (installer)
-    .\build.ps1 -Configuration Debug         # Debug (expanded build)
-    .\build.ps1 -Configuration Release -SkipTests
-    .\build.ps1 -Target check                # checks only
+    .\build-win.ps1 debug
+    .\build-win.ps1 release
+    .\build-win.ps1 release -SkipTests
+    .\build-win.ps1 debug -Target check
 #>
 param(
-    [ValidateSet('Release', 'Debug')]
-    [string]$Configuration = 'Release',
+    [Parameter(Position = 0)]
+    [ValidateSet('release', 'debug')]
+    [string]$Configuration = 'debug',
     [ValidateSet('make', 'package', 'check')]
     [string]$Target,
     [switch]$SkipTests,
@@ -35,14 +36,19 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
+
+$Configuration = $Configuration.ToLowerInvariant()
 
 # Configuration drives the default Target unless the caller set one explicitly.
 if (-not $PSBoundParameters.ContainsKey('Target')) {
-    $Target = if ($Configuration -eq 'Debug') { 'package' } else { 'make' }
+    $Target = if ($Configuration -eq 'debug') { 'package' } else { 'make' }
 }
 
 # Surfaced to electron-forge / vite for any env-dependent behaviour.
-$env:NODE_ENV = if ($Configuration -eq 'Debug') { 'development' } else { 'production' }
+$env:MASON_BUILD_CONFIGURATION = $Configuration
+$env:NODE_ENV = if ($Configuration -eq 'debug') { 'development' } else { 'production' }
+$outputRoot = Join-Path $PSScriptRoot "out\$Configuration"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,6 +86,7 @@ Write-Host ""
 Write-Host "Mason Launcher - Build" -ForegroundColor White
 Write-Host "Configuration : $Configuration" -ForegroundColor DarkGray
 Write-Host "Target        : $Target" -ForegroundColor DarkGray
+Write-Host "Output        : $outputRoot" -ForegroundColor DarkGray
 Write-Host "Date          : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 
 $nodeVerRaw = (node --version) 2>&1
@@ -122,12 +129,12 @@ if (-not $SkipTests) {
 }
 
 if ($Target -eq 'package') {
-    Invoke-Step "electron-forge package  ->  out/" {
+    Invoke-Step "electron-forge package  ->  out/$Configuration/" {
         npm run package
     }
 }
 elseif ($Target -eq 'make') {
-    Invoke-Step "electron-forge make  ->  out/make/" {
+    Invoke-Step "electron-forge make  ->  out/$Configuration/make/" {
         npm run make
     }
 }
@@ -142,7 +149,7 @@ Write-Host ""
 Write-Host ("=" * 60) -ForegroundColor DarkGray
 
 if ($Target -eq 'make') {
-    $installer = Get-ChildItem "out\make\squirrel.windows\x64\*.exe" -ErrorAction SilentlyContinue |
+    $installer = Get-ChildItem (Join-Path $outputRoot "make\squirrel.windows\x64\*.exe") -ErrorAction SilentlyContinue |
                  Select-Object -First 1
     if ($installer) {
         $sizeMB = [math]::Round($installer.Length / 1MB, 1)
@@ -150,7 +157,7 @@ if ($Target -eq 'make') {
     }
 }
 elseif ($Target -eq 'package') {
-    $exe = Get-ChildItem "out\*\*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $exe = Get-ChildItem (Join-Path $outputRoot "*\*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($exe) {
         Write-Host "Executable: $($exe.FullName)" -ForegroundColor White
     }

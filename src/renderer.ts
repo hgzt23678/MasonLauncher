@@ -23,6 +23,7 @@ interface MdEl extends HTMLElement {
   disabled: boolean;
   active: boolean;
   activeTabIndex: number;
+  selected: boolean;
 }
 
 type MinecraftVersion = {
@@ -219,6 +220,7 @@ type LauncherState = {
   settings: {
     minMemory: number;
     maxMemory: number;
+    showDeveloperLogs: boolean;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -327,6 +329,7 @@ const demoState: LauncherState = {
   settings: {
     minMemory: 1024,
     maxMemory: 4096,
+    showDeveloperLogs: true,
   },
   profiles: [
     {
@@ -415,6 +418,9 @@ const api = window.launcher ?? {
     }
     if (typeof settings.maxMemory === 'number') {
       demoState.settings.maxMemory = settings.maxMemory;
+    }
+    if (typeof settings.showDeveloperLogs === 'boolean') {
+      demoState.settings.showDeveloperLogs = settings.showDeveloperLogs;
     }
     return demoState;
   },
@@ -626,6 +632,8 @@ const deviceCodeOpen = byId<HTMLElement>('device-code-open');
 const deviceCodeCancel = byId<HTMLElement>('device-code-cancel');
 const deviceCodeExpiry = byId<HTMLElement>('device-code-expiry');
 const developerLogList = byId<HTMLElement>('developer-log-list');
+const developerLogSection = byId<HTMLElement>('developer-log-section');
+const developerLogToggle = byId<HTMLElement>('developer-log-toggle');
 const refreshLogsButton = byId<HTMLElement>('refresh-logs-button');
 const clearLogsButton = byId<HTMLElement>('clear-logs-button');
 const openFolderButton = byId<HTMLElement>('open-folder-button');
@@ -756,6 +764,13 @@ const refreshDeveloperLogs = async () => {
   renderDeveloperLogs(await api.getLogs());
 };
 
+const setDeveloperLogsVisible = (visible: boolean) => {
+  if (developerLogToggle) {
+    (developerLogToggle as MdEl).selected = visible;
+  }
+  developerLogSection?.toggleAttribute('hidden', !visible);
+};
+
 const showToast = (message: string, isError = false) => {
   if (!toast) {
     return;
@@ -775,7 +790,9 @@ const setLoading = (loading: boolean) => {
 const openSettingsModal = () => {
   settingsModal?.removeAttribute('hidden');
   void api.getAuthFlowState().then(renderAuthFlow);
-  void refreshDeveloperLogs();
+  if (currentState?.settings.showDeveloperLogs) {
+    void refreshDeveloperLogs();
+  }
   void loadJavaRuntimes();
 };
 const closeSettingsModal = () => settingsModal?.setAttribute('hidden', '');
@@ -1111,6 +1128,7 @@ const renderState = (state: LauncherState) => {
   if (maxMemoryInput) {
     (maxMemoryInput as MdEl).value = String(state.settings.maxMemory);
   }
+  setDeveloperLogsVisible(state.settings.showDeveloperLogs);
   renderProfileGrid();
   renderAuth(state.auth);
 };
@@ -2070,6 +2088,10 @@ const saveLauncherSettings = async () => {
   const state = await api.saveSettings({
     minMemory: Number((minMemoryInput as MdEl)?.value ?? 1024),
     maxMemory: Number((maxMemoryInput as MdEl)?.value ?? 4096),
+    showDeveloperLogs:
+      (developerLogToggle as MdEl)?.selected ??
+      currentState?.settings.showDeveloperLogs ??
+      false,
   });
   renderState(state);
   return state;
@@ -2384,6 +2406,27 @@ refreshLogsButton?.addEventListener('click', () => {
 
 clearLogsButton?.addEventListener('click', async () => {
   renderDeveloperLogs(await api.clearLogs());
+});
+
+developerLogToggle?.addEventListener('change', async () => {
+  const visible = (developerLogToggle as MdEl).selected;
+  setDeveloperLogsVisible(visible);
+  try {
+    renderState(await api.saveSettings({ showDeveloperLogs: visible }));
+    if (visible) {
+      await refreshDeveloperLogs();
+    }
+  } catch (error) {
+    setDeveloperLogsVisible(
+      currentState?.settings.showDeveloperLogs ?? false,
+    );
+    showToast(
+      error instanceof Error
+        ? error.message
+        : '開発者ログ設定を保存できませんでした。',
+      true,
+    );
+  }
 });
 
 api.onLog((payload) => {

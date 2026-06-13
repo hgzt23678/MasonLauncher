@@ -1,17 +1,17 @@
 @echo off
 setlocal
 
-cd /d "C:\Users\hgzt23678\Documents\New project"
+cd /d "%~dp0"
 if errorlevel 1 (
 echo Failed to cd into project directory.
 pause
 exit /b 1
 )
 
-powershell -NoProfile -ExecutionPolicy Bypass -File ".\build.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File ".\build-win.ps1" debug %*
 
 set EXITCODE=%ERRORLEVEL%
 echo.
-echo build.ps1 exited with code %EXITCODE%
+echo build-win.ps1 debug exited with code %EXITCODE%
 pause
 exit /b %EXITCODE%

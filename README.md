@@ -66,13 +66,17 @@ npm start
 npm run lint
 npm run typecheck
 npm run test
-npm run package
-npm run make
+build.bat
+build-release.bat
+# Linux:
+./build-linux.sh debug
+./build-linux.sh release
 ```
 
 - `npm start`: Viteのホットリロード付きで起動
-- `npm run package`: `out/`へ展開済みアプリを作成
-- `npm run make`: `out/make/`へWindowsインストーラー等を作成
+- `build.bat`: Debugビルドを`out/debug/`へ作成
+- `build-release.bat`: Releaseビルドを`out/release/`へ作成
+- `build-linux.sh debug|release`: Linuxで構成別に`out/debug/`または`out/release/`へ作成
 
 `.env`にクライアントIDがない開発ビルドは起動できますが、Microsoftログインは無効になります。
 
