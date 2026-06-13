@@ -3,7 +3,6 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import type { WebContents } from 'electron';
-import { createMinecraftProcessWatcher } from '@xmcl/core';
 import { AuthService } from '../src/auth-service';
 import {
   defaultJavaSettings,
@@ -11,7 +10,15 @@ import {
 } from '../src/java-runtime-service';
 import { MinecraftDownloader } from '../src/minecraft-downloader';
 import { MinecraftLaunchResolver } from '../src/minecraft-launch-resolver';
-import { MinecraftService } from '../src/minecraft-service';
+import {
+  MinecraftService,
+  resolveLaunchJavaExecutable,
+  validateMinecraftNatives,
+} from '../src/minecraft-service';
+import {
+  isConfirmedMinecraftWindow,
+  probeMinecraftWindow,
+} from '../src/minecraft-window-probe';
 import type {
   LauncherLogLevel,
   LauncherLogStage,
@@ -103,7 +110,7 @@ const waitForWindow = (
     const child = spawn(command, args, {
       cwd,
       shell: false,
-      windowsHide: true,
+      windowsHide: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     const pid = child.pid;
@@ -114,8 +121,11 @@ const waitForWindow = (
 
     let settled = false;
     let windowReady = false;
+    let visibleWindow:
+      | { pid: number; handle: number; firstSeenAt: number }
+      | undefined;
     let stderrTail = '';
-    const watcher = createMinecraftProcessWatcher(child);
+    let probeTimer: NodeJS.Timeout | undefined;
     const finish = async (
       result: Pick<
         VerificationResult,
@@ -125,6 +135,7 @@ const waitForWindow = (
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (probeTimer) clearTimeout(probeTimer);
       resolve(result);
     };
 
@@ -137,18 +148,7 @@ const waitForWindow = (
       clearTimeout(timer);
       reject(error);
     });
-    watcher.on('minecraft-window-ready', () => {
-      windowReady = true;
-      void stopProcess(pid).then(() =>
-        finish({
-          pid,
-          windowReady: true,
-          exitCode: null,
-          signal: null,
-        }),
-      );
-    });
-    watcher.on('minecraft-exit', ({ code, signal }) => {
+    child.once('exit', (code, signal) => {
       if (windowReady) return;
       const suffix = stderrTail.trim()
         ? `\nLast stderr:\n${stderrTail.trim()}`
@@ -159,6 +159,40 @@ const waitForWindow = (
         ),
       );
     });
+    const pollWindow = async (): Promise<void> => {
+      if (settled) return;
+      const result = await probeMinecraftWindow(pid);
+      const candidate = result.candidates.find(isConfirmedMinecraftWindow);
+      const now = Date.now();
+      if (candidate) {
+        if (
+          visibleWindow?.pid === candidate.pid &&
+          visibleWindow.handle === candidate.handle
+        ) {
+          if (now - visibleWindow.firstSeenAt >= 2_000) {
+            windowReady = true;
+            await stopProcess(pid);
+            await finish({
+              pid,
+              windowReady: true,
+              exitCode: null,
+              signal: null,
+            });
+            return;
+          }
+        } else {
+          visibleWindow = {
+            pid: candidate.pid,
+            handle: candidate.handle,
+            firstSeenAt: now,
+          };
+        }
+      } else {
+        visibleWindow = undefined;
+      }
+      probeTimer = setTimeout(() => void pollWindow(), 500);
+    };
+    void pollWindow();
 
     const timer = setTimeout(() => {
       void stopProcess(pid).then(() => {
@@ -184,6 +218,14 @@ const run = async () => {
     microsoftClientId: string;
     minMemory?: number;
     maxMemory?: number;
+    profiles?: Array<{
+      id: string;
+      resolvedVersionId?: string;
+      versionId?: string;
+      instanceDir?: string;
+      minMemory?: number;
+      maxMemory?: number;
+    }>;
   };
   const runtimeRoot =
     process.env.MASON_VERIFY_RUNTIME_ROOT?.trim() ||
@@ -212,7 +254,19 @@ const run = async () => {
   for (const versionId of versions) {
     console.log(`VERIFY_START ${versionId}`);
     try {
-      const prepared = await downloader.prepareVersion(versionId);
+      const installedVersionJson = path.join(
+        settings.gameDirectory,
+        'versions',
+        versionId,
+        `${versionId}.json`,
+      );
+      const prepared = await fs.access(installedVersionJson).then(
+        () =>
+          downloader.prepareInstalledVersion(versionId, () => undefined, {
+            offlineOnly: true,
+          }),
+        () => downloader.prepareVersion(versionId),
+      );
       const component =
         prepared.version.javaVersion?.component || 'jre-legacy';
       const officialJava = path.join(
@@ -256,23 +310,34 @@ const run = async () => {
           return executable;
         },
       });
-      const gamePath = path.join(
-        settings.gameDirectory,
-        'mason-launcher',
-        'verification',
-        versionId,
+      const matchingProfile = settings.profiles?.find(
+        (profile) =>
+          profile.resolvedVersionId === versionId ||
+          profile.versionId === versionId,
       );
+      const gamePath =
+        matchingProfile?.instanceDir ??
+        path.join(
+          settings.gameDirectory,
+          'mason-launcher',
+          'verification',
+          versionId,
+        );
       await fs.mkdir(gamePath, { recursive: true });
+      await validateMinecraftNatives(prepared.nativesDirectory);
+      const launchJavaPath = await resolveLaunchJavaExecutable(java.javaPath);
       const resolved = await resolver.resolve({
         versionId,
         session,
         settings: {
-          minMemory: settings.minMemory ?? 1024,
-          maxMemory: settings.maxMemory ?? 4096,
+          minMemory:
+            matchingProfile?.minMemory ?? settings.minMemory ?? 1024,
+          maxMemory:
+            matchingProfile?.maxMemory ?? settings.maxMemory ?? 4096,
         },
         gamePath,
         resourcePath: settings.gameDirectory,
-        javaPath: java.javaPath,
+        javaPath: launchJavaPath,
         nativesDirectory: prepared.nativesDirectory,
       });
       const processResult = await waitForWindow(
@@ -284,7 +349,7 @@ const run = async () => {
         versionId,
         success: processResult.windowReady === true,
         ...processResult,
-        javaPath: java.javaPath,
+        javaPath: launchJavaPath,
         javaMajor: java.majorVersion,
         mainClass: resolved.mainClass,
         classpathEntries: resolved.classpathEntries,

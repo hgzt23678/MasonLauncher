@@ -14,6 +14,7 @@ import {
 } from '../src/minecraft-launch-resolver';
 import {
   buildPowerShellReproductionScript,
+  classifyMinecraftRuntimeLog,
   MinecraftProcessRunner,
 } from '../src/minecraft-process-runner';
 import { MinecraftError } from '../src/minecraft-errors';
@@ -224,6 +225,7 @@ test('ProcessRunnerはshellを使わずtokenをログでマスクする', () => 
 
   assert.equal(captured?.command, 'C:\\Java Runtime\\bin\\javaw.exe');
   assert.equal(captured?.options?.shell, false);
+  assert.equal(captured?.options?.windowsHide, false);
   assert.equal(captured?.options?.cwd, 'C:\\Game Path');
   assert.deepEqual(captured?.args, [
     '-cp',
@@ -257,6 +259,27 @@ test('PowerShell再現スクリプトはtokenを保存しない', () => {
   assert.match(script, /\$env:MASON_MC_ACCESS_TOKEN/);
   assert.match(script, /Push-Location -LiteralPath/);
   assert.doesNotMatch(script, /top-secret-token/);
+});
+
+test('GLFW・natives・メモリ不足ログを分類する', () => {
+  assert.equal(
+    classifyMinecraftRuntimeLog(
+      'GLFW error 65542: WGL: The driver does not appear to support OpenGL',
+    )?.category,
+    'graphics',
+  );
+  assert.equal(
+    classifyMinecraftRuntimeLog(
+      'java.lang.UnsatisfiedLinkError: no lwjgl64 in java.library.path',
+    )?.category,
+    'natives',
+  );
+  assert.equal(
+    classifyMinecraftRuntimeLog(
+      'Could not reserve enough space for object heap',
+    )?.category,
+    'memory',
+  );
 });
 
 test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared', async (t) => {
@@ -304,6 +327,11 @@ test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared
         mainClass: 'net.minecraft.client.main.Main',
         classpathEntries: 1,
         argumentCount: 5,
+        minMemoryMb: 1024,
+        maxMemoryMb: 2048,
+        freeMemoryMb: 8192,
+        totalMemoryMb: 16384,
+        nativeFileCount: 3,
         latestLogPath: path.join(root, 'logs', 'latest.log'),
         launcherLogPath,
       },
@@ -381,6 +409,11 @@ test('XMCL init log does not count as a confirmed Minecraft window', async (t) =
         mainClass: 'net.minecraft.client.main.Main',
         classpathEntries: 1,
         argumentCount: 3,
+        minMemoryMb: 1024,
+        maxMemoryMb: 2048,
+        freeMemoryMb: 8192,
+        totalMemoryMb: 16384,
+        nativeFileCount: 3,
         latestLogPath: path.join(root, 'logs', 'latest.log'),
         launcherLogPath,
       },
@@ -448,12 +481,13 @@ test('a verified visible window is the only event that confirms the screen', asy
     category?: string;
     message: string;
   }> = [];
-  let now = Date.parse('2026-01-01T00:00:00.000Z');
   const runner = new MinecraftProcessRunner(
     () => undefined,
     () => child,
-    () => now,
+    Date.now,
     visibleWindowProbe,
+    20,
+    10,
   );
   runner.run(
     {
@@ -472,6 +506,11 @@ test('a verified visible window is the only event that confirms the screen', asy
         mainClass: 'net.minecraft.client.main.Main',
         classpathEntries: 1,
         argumentCount: 3,
+        minMemoryMb: 1024,
+        maxMemoryMb: 2048,
+        freeMemoryMb: 8192,
+        totalMemoryMb: 16384,
+        nativeFileCount: 3,
         latestLogPath: path.join(root, 'logs', 'latest.log'),
         launcherLogPath: path.join(root, 'launcher.log'),
       },
@@ -486,7 +525,7 @@ test('a verified visible window is the only event that confirms the screen', asy
   ) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  now += 5_000;
+  await new Promise((resolve) => setTimeout(resolve, 3_100));
   child.emit('exit', 0, null);
   for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -532,7 +571,6 @@ test('a window that disappears immediately is not treated as a successful launch
       intersectsVirtualScreen: true,
     }],
   });
-  let now = Date.parse('2026-01-01T00:00:00.000Z');
   const states: Array<{
     running: boolean;
     category?: string;
@@ -541,8 +579,10 @@ test('a window that disappears immediately is not treated as a successful launch
   const runner = new MinecraftProcessRunner(
     () => undefined,
     () => child,
-    () => now,
+    Date.now,
     visibleWindowProbe,
+    20,
+    10,
   );
   runner.run(
     {
@@ -561,6 +601,11 @@ test('a window that disappears immediately is not treated as a successful launch
         mainClass: 'net.minecraft.client.main.Main',
         classpathEntries: 1,
         argumentCount: 1,
+        minMemoryMb: 1024,
+        maxMemoryMb: 2048,
+        freeMemoryMb: 8192,
+        totalMemoryMb: 16384,
+        nativeFileCount: 3,
         latestLogPath: path.join(root, 'logs', 'latest.log'),
         launcherLogPath: path.join(root, 'launcher.log'),
       },
@@ -575,7 +620,6 @@ test('a window that disappears immediately is not treated as a successful launch
   ) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
-  now += 1_000;
   child.emit('exit', 0, null);
   for (let attempt = 0; attempt < 100 && states.at(-1)?.running; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 10));

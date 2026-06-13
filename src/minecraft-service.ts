@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { promises as fs } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Version, type ResolvedVersion } from '@xmcl/core';
 import {
@@ -88,6 +89,94 @@ type LogWriter = (
 
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+
+export const resolveLaunchJavaExecutable = async (
+  javaPath: string,
+  platform: NodeJS.Platform = process.platform,
+) => {
+  if (
+    platform !== 'win32' ||
+    path.basename(javaPath).toLowerCase() !== 'java.exe'
+  ) {
+    return javaPath;
+  }
+  const javawPath = path.join(path.dirname(javaPath), 'javaw.exe');
+  try {
+    const stat = await fs.stat(javawPath);
+    return stat.isFile() ? javawPath : javaPath;
+  } catch {
+    return javaPath;
+  }
+};
+
+export const validateMinecraftNatives = async (
+  nativesDirectory: string,
+  platform: NodeJS.Platform = process.platform,
+) => {
+  if (/(?:^|[\\/])[^\\/]+\.asar(?:[\\/]|$)/i.test(nativesDirectory)) {
+    throw new MinecraftError(
+      'Minecraft nativesディレクトリがASAR内を指しています。',
+      'natives',
+      'NATIVES_INSIDE_ASAR',
+      { nativesDirectory },
+    );
+  }
+  let stat;
+  try {
+    stat = await fs.stat(nativesDirectory);
+  } catch (error) {
+    throw new MinecraftError(
+      'Minecraft nativesディレクトリが存在しません。',
+      'natives',
+      'NATIVES_DIRECTORY_MISSING',
+      { nativesDirectory },
+      { cause: error },
+    );
+  }
+  if (!stat.isDirectory()) {
+    throw new MinecraftError(
+      'Minecraft nativesの展開先がディレクトリではありません。',
+      'natives',
+      'NATIVES_DIRECTORY_INVALID',
+      { nativesDirectory },
+    );
+  }
+  const extension =
+    platform === 'win32' ? '.dll' : platform === 'darwin' ? '.dylib' : '.so';
+  const nativeFiles = (await fs.readdir(nativesDirectory, {
+    recursive: true,
+    withFileTypes: true,
+  })).filter(
+    (entry) =>
+      entry.isFile() && entry.name.toLowerCase().endsWith(extension),
+  );
+  if (nativeFiles.length === 0) {
+    throw new MinecraftError(
+      `Minecraft nativesに必要な${extension}ファイルがありません。`,
+      'natives',
+      'NATIVES_FILES_MISSING',
+      { nativesDirectory, extension },
+    );
+  }
+  const writeProbe = path.join(
+    nativesDirectory,
+    `.mason-write-test-${process.pid}-${randomUUID()}`,
+  );
+  try {
+    await fs.writeFile(writeProbe, '');
+  } catch (error) {
+    throw new MinecraftError(
+      'Minecraft nativesディレクトリへ書き込めません。',
+      'natives',
+      'NATIVES_DIRECTORY_READ_ONLY',
+      { nativesDirectory },
+      { cause: error },
+    );
+  } finally {
+    await fs.rm(writeProbe, { force: true }).catch((): void => undefined);
+  }
+  return { nativeFileCount: nativeFiles.length };
+};
 
 export const isJavaRuntimeManifestComplete = async (
   destination: string,
@@ -679,6 +768,45 @@ export class MinecraftService {
           },
         );
       }
+      const totalMemoryMb = Math.floor(os.totalmem() / (1024 * 1024));
+      const freeMemoryMb = Math.floor(os.freemem() / (1024 * 1024));
+      const normalizedJavaArch = javaProbe.arch.toLowerCase();
+      if (
+        /(?:x86|i[3-6]86|32)/.test(normalizedJavaArch) &&
+        !/(?:x86_64|amd64|x64)/.test(normalizedJavaArch) &&
+        settings.maxMemory > 1536
+      ) {
+        throw new MinecraftError(
+          `32-bit Javaでは最大メモリ ${settings.maxMemory} MBを確保できません。`,
+          'memory',
+          'JAVA_32BIT_HEAP_TOO_LARGE',
+          { javaArchitecture: javaProbe.arch, maxMemoryMb: settings.maxMemory },
+        );
+      }
+      if (settings.maxMemory > Math.max(512, totalMemoryMb - 512)) {
+        throw new MinecraftError(
+          `設定された最大メモリ ${settings.maxMemory} MBが物理メモリ容量に対して大きすぎます。`,
+          'memory',
+          'JAVA_HEAP_EXCEEDS_PHYSICAL_MEMORY',
+          { maxMemoryMb: settings.maxMemory, totalMemoryMb, freeMemoryMb },
+        );
+      }
+      const nativesValidation = await validateMinecraftNatives(
+        prepared.nativesDirectory,
+      );
+      const launchJavaPath = await resolveLaunchJavaExecutable(javaPath);
+      this.log('info', 'java', 'Minecraft起動前のJava・メモリ・natives検証が完了しました。', {
+        probeJavaPath: javaPath,
+        launchJavaPath,
+        javaMajor: javaProbe.majorVersion,
+        javaArch: javaProbe.arch,
+        minMemoryMb: settings.minMemory,
+        maxMemoryMb: settings.maxMemory,
+        freeMemoryMb,
+        totalMemoryMb,
+        nativesDirectory: prepared.nativesDirectory,
+        nativeFileCount: nativesValidation.nativeFileCount,
+      });
 
       this.report(sender, {
         phase: 'resolve',
@@ -691,7 +819,7 @@ export class MinecraftService {
         settings,
         gamePath,
         resourcePath,
-        javaPath,
+        javaPath: launchJavaPath,
         nativesDirectory: prepared.nativesDirectory,
       });
       this.report(sender, {
@@ -736,6 +864,11 @@ export class MinecraftService {
             mainClass: resolved.mainClass,
             classpathEntries: resolved.classpathEntries,
             argumentCount: resolved.args.length,
+            minMemoryMb: settings.minMemory,
+            maxMemoryMb: settings.maxMemory,
+            freeMemoryMb,
+            totalMemoryMb,
+            nativeFileCount: nativesValidation.nativeFileCount,
             latestLogPath,
             launcherLogPath,
           },

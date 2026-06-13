@@ -8,6 +8,7 @@ import {
   type ChildProcess,
   type SpawnOptions,
 } from 'node:child_process';
+import path from 'node:path';
 import { createMinecraftProcessWatcher } from '@xmcl/core';
 import {
   sanitizeDetail,
@@ -63,6 +64,11 @@ export type MinecraftLaunchLogMetadata = {
   mainClass: string;
   classpathEntries: number;
   argumentCount: number;
+  minMemoryMb: number;
+  maxMemoryMb: number;
+  freeMemoryMb: number;
+  totalMemoryMb: number;
+  nativeFileCount: number;
   latestLogPath: string;
   launcherLogPath: string;
 };
@@ -101,6 +107,66 @@ const mainClassPatterns = [
   'Backend library:',
 ];
 
+export type MinecraftRuntimeDiagnosis = {
+  category: Extract<
+    MinecraftErrorCategory,
+    'graphics' | 'memory' | 'natives'
+  >;
+  code: string;
+  message: string;
+  matchedLine: string;
+};
+
+export const classifyMinecraftRuntimeLog = (
+  line: string,
+): MinecraftRuntimeDiagnosis | undefined => {
+  const sanitized = sanitizeLogText(line);
+  if (
+    /GLFW error 6554[23]|Failed to create (?:the )?window|Could not create (?:OpenGL )?context|WGL:|GLX:|OpenGL.*(?:not supported|failed)|Pixel format (?:not accelerated|not supported)/i.test(
+      sanitized,
+    )
+  ) {
+    return {
+      category: 'graphics',
+      code: /65542/.test(sanitized)
+        ? 'GLFW_OPENGL_UNAVAILABLE'
+        : /65543/.test(sanitized)
+          ? 'GLFW_OPENGL_VERSION_UNAVAILABLE'
+          : 'GRAPHICS_INITIALIZATION_FAILED',
+      message:
+        'Minecraftのグラフィック初期化に失敗しました。GPUドライバとOpenGL対応状況を確認してください。',
+      matchedLine: sanitized,
+    };
+  }
+  if (
+    /Could not reserve enough space for object heap|java\.lang\.OutOfMemoryError|Java heap space|GC overhead limit exceeded|Metaspace|Out of swap space\?|unable to create native thread|os::commit_memory failed/i.test(
+      sanitized,
+    )
+  ) {
+    return {
+      category: 'memory',
+      code: 'JAVA_MEMORY_ALLOCATION_FAILED',
+      message:
+        'Minecraftのメモリ確保に失敗しました。Xmx/Xmsを下げ、空き物理メモリを確認してください。',
+      matchedLine: sanitized,
+    };
+  }
+  if (
+    /UnsatisfiedLinkError|no .+ in java\.library\.path|Failed to load .*(?:dll|native)|LWJGL.*(?:failed|error)/i.test(
+      sanitized,
+    )
+  ) {
+    return {
+      category: 'natives',
+      code: 'NATIVE_LIBRARY_LOAD_FAILED',
+      message:
+        'MinecraftのLWJGL/native library読み込みに失敗しました。nativesを再展開してください。',
+      matchedLine: sanitized,
+    };
+  }
+  return undefined;
+};
+
 const appendRingLine = (lines: string[], line: string, limit = 200) => {
   lines.push(sanitizeLogText(line));
   if (lines.length > limit) {
@@ -125,6 +191,30 @@ const readLogTail = async (target: string, lineLimit = 100) => {
     } finally {
       await handle.close();
     }
+  } catch {
+    return [];
+  }
+};
+
+const findHotSpotErrorLogs = async (gameDirectory: string) => {
+  try {
+    const files = await fs.readdir(gameDirectory, { withFileTypes: true });
+    return await Promise.all(
+      files
+        .filter(
+          (entry) =>
+            entry.isFile() && /^hs_err_pid\d+\.log$/i.test(entry.name),
+        )
+        .map(async (entry) => {
+          const target = path.join(gameDirectory, entry.name);
+          const stat = await fs.stat(target);
+          return {
+            path: target,
+            size: stat.size,
+            modifiedAt: stat.mtime.toISOString(),
+          };
+        }),
+    );
   } catch {
     return [];
   }
@@ -222,6 +312,9 @@ export class MinecraftProcessRunner {
     ) => spawn(command, args, options),
     private readonly now: () => number = Date.now,
     private readonly windowProbe: MinecraftWindowProbe = probeMinecraftWindow,
+    private readonly windowConfirmationDurationMs = 2_000,
+    private readonly windowProbeIntervalMs = 1_000,
+    private readonly windowProbeTimeoutMs = 300_000,
   ) {}
 
   run(
@@ -243,8 +336,9 @@ export class MinecraftProcessRunner {
     const options: SpawnOptions = {
       cwd: request.cwd,
       shell: false,
-      // java.exe runtimes would otherwise flash a console window on Windows.
-      windowsHide: true,
+      // STARTF_USESHOWWINDOW/SW_HIDE also hides LWJGL's first GUI window.
+      // Minecraft uses javaw.exe on Windows to avoid a console window instead.
+      windowsHide: false,
       stdio: ['ignore', 'pipe', 'pipe'],
     };
     const validated = validateSpawnRequest({
@@ -253,6 +347,12 @@ export class MinecraftProcessRunner {
       options,
     });
     const redactedArgs = redactArguments(validated.args);
+    const effectiveXms =
+      [...validated.args].reverse().find((argument) => /^-Xms/i.test(argument)) ??
+      null;
+    const effectiveXmx =
+      [...validated.args].reverse().find((argument) => /^-Xmx/i.test(argument)) ??
+      null;
     let launchLog: WriteStream | undefined;
     const writeLaunchLog = (event: string, detail: Record<string, unknown>) => {
       if (!launchLog) return;
@@ -277,6 +377,8 @@ export class MinecraftProcessRunner {
       });
       writeLaunchLog('launch', {
         ...request.metadata,
+        effectiveXms,
+        effectiveXmx,
         command: validated.command,
         commandLine: [validated.command, ...redactedArgs]
           .map(quoteForLog)
@@ -312,6 +414,8 @@ export class MinecraftProcessRunner {
         .map(quoteForLog)
         .join(' '),
       argumentCount: validated.args.length,
+      effectiveXms,
+      effectiveXmx,
       cwd: validated.options?.cwd,
     });
 
@@ -341,11 +445,16 @@ export class MinecraftProcessRunner {
     let windowConfirmed = false;
     let windowConfirmedAt: number | undefined;
     let confirmedWindow: WindowProbeCandidate | undefined;
+    let pendingWindow:
+      | { pid: number; handle: number; firstSeenAt: number }
+      | undefined;
+    let runtimeDiagnosis: MinecraftRuntimeDiagnosis | undefined;
     let stopped = false;
     let probeTimer: NodeJS.Timeout | undefined;
     let latestLogTimer: NodeJS.Timeout | undefined;
     let latestLogSeen = false;
     let windowCandidateSeen = false;
+    let windowUnverifiedWarningSent = false;
     const spawnedAt = this.now();
 
     const forward = (
@@ -362,6 +471,24 @@ export class MinecraftProcessRunner {
         appendRingLine(stream === 'stdout' ? stdoutTail : stderrTail, line);
         this.log(level, 'process', line, { stream });
         writeLaunchLog(stream, { message: line });
+        if (!runtimeDiagnosis) {
+          runtimeDiagnosis = classifyMinecraftRuntimeLog(line);
+          if (runtimeDiagnosis) {
+            writeLaunchLog('runtime-diagnosis', runtimeDiagnosis);
+            this.log(
+              'error',
+              'process',
+              runtimeDiagnosis.message,
+              runtimeDiagnosis,
+            );
+            callbacks.onState({
+              running: true,
+              pid: processHandle.pid,
+              category: runtimeDiagnosis.category,
+              message: runtimeDiagnosis.message,
+            });
+          }
+        }
         if (
           stream === 'stdout' &&
           !mainClassOutputSeen &&
@@ -482,20 +609,44 @@ export class MinecraftProcessRunner {
         });
       }
       if (candidate) {
-        windowConfirmed = true;
-        windowConfirmedAt = this.now();
-        confirmedWindow = candidate;
-        this.log('info', 'process', 'Minecraft画面を確認しました。', {
-          pid,
-          window: candidate,
-          elapsedMs: this.now() - spawnedAt,
-        });
-        callbacks.onState({
-          running: true,
-          pid,
-          message: 'Minecraft画面を確認しました。プレイ中です。',
-        });
-        return;
+        const checkedAt = this.now();
+        if (
+          !pendingWindow ||
+          pendingWindow.pid !== candidate.pid ||
+          pendingWindow.handle !== candidate.handle
+        ) {
+          pendingWindow = {
+            pid: candidate.pid,
+            handle: candidate.handle,
+            firstSeenAt: checkedAt,
+          };
+          writeLaunchLog('window-visible-candidate', {
+            window: candidate,
+            firstSeenAt: new Date(checkedAt).toISOString(),
+            requiredDurationMs: this.windowConfirmationDurationMs,
+          });
+        } else if (
+          checkedAt - pendingWindow.firstSeenAt >=
+          this.windowConfirmationDurationMs
+        ) {
+          windowConfirmed = true;
+          windowConfirmedAt = checkedAt;
+          confirmedWindow = candidate;
+          this.log('info', 'process', 'Minecraft画面を確認しました。', {
+            pid,
+            window: candidate,
+            visibleDurationMs: checkedAt - pendingWindow.firstSeenAt,
+            elapsedMs: checkedAt - spawnedAt,
+          });
+          callbacks.onState({
+            running: true,
+            pid,
+            message: 'Minecraft画面を確認しました。プレイ中です。',
+          });
+          return;
+        }
+      } else {
+        pendingWindow = undefined;
       }
       if (result.error) {
         this.log('warn', 'process', 'Minecraft画面の確認に失敗しました。', {
@@ -503,8 +654,27 @@ export class MinecraftProcessRunner {
           message: result.error,
         });
       }
-      if (result.supported && this.now() - spawnedAt < 60_000) {
-        probeTimer = setTimeout(() => void pollForWindow(), 1_000);
+      const elapsedMs = this.now() - spawnedAt;
+      if (!windowUnverifiedWarningSent && elapsedMs >= 30_000) {
+        windowUnverifiedWarningSent = true;
+        writeLaunchLog('window-unverified-warning', {
+          pid,
+          elapsedMs,
+          candidates: result.candidates,
+        });
+        callbacks.onState({
+          running: true,
+          pid,
+          category: 'window-unverified',
+          message:
+            'Minecraftプロセスは起動していますが、画面表示をまだ確認できません。',
+        });
+      }
+      if (result.supported && elapsedMs < this.windowProbeTimeoutMs) {
+        probeTimer = setTimeout(
+          () => void pollForWindow(),
+          this.windowProbeIntervalMs,
+        );
       }
     };
     if (request.metadata && processHandle.pid) {
@@ -564,7 +734,15 @@ export class MinecraftProcessRunner {
       const latestLogTail = latestLogPath
         ? await readLogTail(latestLogPath)
         : [];
-      const logMessage = abnormalCode
+      runtimeDiagnosis ??= latestLogTail
+        .map(classifyMinecraftRuntimeLog)
+        .find((diagnosis) => diagnosis !== undefined);
+      const hotSpotErrorLogs = request.metadata?.gameDir
+        ? await findHotSpotErrorLogs(request.metadata.gameDir)
+        : [];
+      const logMessage = runtimeDiagnosis
+        ? runtimeDiagnosis.message
+        : abnormalCode
         ? `Minecraftが異常終了しました（コード ${code}）。`
         : killedBySignal
           ? `Minecraftがシグナル ${signal} で終了しました。`
@@ -599,6 +777,8 @@ export class MinecraftProcessRunner {
         latestLogTail,
         stdoutTail,
         stderrTail,
+        runtimeDiagnosis: runtimeDiagnosis ?? null,
+        hotSpotErrorLogs,
       };
       if (launchLog) {
         const exitRecord = `${JSON.stringify({
@@ -628,7 +808,11 @@ export class MinecraftProcessRunner {
         }
       }
       this.log(
-        crashed ? 'error' : windowUnverified ? 'warn' : 'info',
+        runtimeDiagnosis || crashed
+          ? 'error'
+          : windowUnverified
+            ? 'warn'
+            : 'info',
         'process',
         logMessage,
         exitDetail,
@@ -637,8 +821,11 @@ export class MinecraftProcessRunner {
         running: false,
         code,
         signal: signal || null,
-        category,
-        message: category ? logMessage : 'Minecraftを終了しました。',
+        category: runtimeDiagnosis?.category ?? category,
+        message:
+          runtimeDiagnosis || category
+            ? logMessage
+            : 'Minecraftを終了しました。',
         crashReportLocation,
       });
     };

@@ -8,6 +8,8 @@ import type { JavaRuntimeManifest } from '@xmcl/installer';
 import {
   isJavaRuntimeManifestComplete,
   repairJavaRuntimeManifestFiles,
+  resolveLaunchJavaExecutable,
+  validateMinecraftNatives,
   waitForJavaRuntimeManifest,
 } from '../src/minecraft-service';
 import { MinecraftError } from '../src/minecraft-errors';
@@ -28,6 +30,42 @@ const runtimeManifest = (
       },
     },
   },
+});
+
+test('Windowsゲーム起動ではjavaw.exeを優先する', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-javaw-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const java = path.join(root, 'bin', 'java.exe');
+  const javaw = path.join(root, 'bin', 'javaw.exe');
+  await fs.mkdir(path.dirname(java), { recursive: true });
+  await fs.writeFile(java, '');
+  assert.equal(await resolveLaunchJavaExecutable(java, 'win32'), java);
+  await fs.writeFile(javaw, '');
+  assert.equal(await resolveLaunchJavaExecutable(java, 'win32'), javaw);
+  assert.equal(await resolveLaunchJavaExecutable(java, 'linux'), java);
+});
+
+test('nativesディレクトリの存在・nativeファイル・書き込み可否を検証する', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-natives-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await assert.rejects(
+    validateMinecraftNatives(path.join(root, 'missing'), 'win32'),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.code === 'NATIVES_DIRECTORY_MISSING',
+  );
+  const natives = path.join(root, 'natives');
+  await fs.mkdir(natives);
+  await assert.rejects(
+    validateMinecraftNatives(natives, 'win32'),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.code === 'NATIVES_FILES_MISSING',
+  );
+  await fs.writeFile(path.join(natives, 'lwjgl64.dll'), 'native');
+  assert.deepEqual(await validateMinecraftNatives(natives, 'win32'), {
+    nativeFileCount: 1,
+  });
 });
 
 test('Mojang Java manifestの全ファイルサイズが一致すれば完了扱いにする', async (t) => {
