@@ -16,6 +16,10 @@ import type {
   LauncherLogStage,
 } from './diagnostics';
 import { ForgeService } from './forge-service';
+import {
+  ModLoaderService,
+  type ModLoaderType,
+} from './mod-loader-service';
 import { ensureLauncherLogsDirectory } from './instance-paths';
 import {
   defaultJavaSettings,
@@ -298,6 +302,7 @@ export class MinecraftService {
   private readonly resolver: MinecraftLaunchResolver;
   private readonly runner: MinecraftProcessRunner;
   private readonly forgeService: ForgeService;
+  private readonly modLoaderService: ModLoaderService;
 
   constructor(
     private readonly gameDirectory: () => Promise<string>,
@@ -309,6 +314,14 @@ export class MinecraftService {
     this.resolver = new MinecraftLaunchResolver(log);
     this.runner = new MinecraftProcessRunner(log);
     this.forgeService = new ForgeService(gameDirectory, log, {
+      prepareInstalledVersion: async (versionId, offlineOnly) =>
+        this.downloader.prepareInstalledVersion(
+          versionId,
+          () => undefined,
+          { offlineOnly },
+        ),
+    });
+    this.modLoaderService = new ModLoaderService(gameDirectory, log, {
       prepareInstalledVersion: async (versionId, offlineOnly) =>
         this.downloader.prepareInstalledVersion(
           versionId,
@@ -337,6 +350,13 @@ export class MinecraftService {
 
   async getForgeBuilds(minecraftVersion: string) {
     return this.forgeService.getBuilds(minecraftVersion);
+  }
+
+  async getModLoaderBuilds(
+    loader: Exclude<ModLoaderType, 'forge'>,
+    minecraftVersion: string,
+  ) {
+    return this.modLoaderService.getBuilds(loader, minecraftVersion);
   }
 
   private taskContext(
@@ -701,6 +721,71 @@ export class MinecraftService {
       });
       throw failure;
     }
+  }
+
+  async ensureModLoader(
+    loader: ModLoaderType,
+    minecraftVersion: string,
+    loaderVersion: string,
+    resolvedVersionId: string,
+    sender: WebContents,
+    offlineOnly = false,
+    javaOptions: JavaLaunchOptions = {},
+  ) {
+    if (loader === 'forge') {
+      return this.ensureForge(
+        minecraftVersion,
+        loaderVersion,
+        sender,
+        offlineOnly,
+        javaOptions,
+      );
+    }
+
+    let javaPath: string | undefined;
+    if (loader === 'neoforge' && !offlineOnly) {
+      let baseVersion: ResolvedVersion;
+      try {
+        baseVersion = await Version.parse(
+          await this.gameDirectory(),
+          minecraftVersion,
+        );
+      } catch (error) {
+        throw new MinecraftError(
+          `NeoForge parent version could not be resolved: ${minecraftVersion}`,
+          'forge-version-json',
+          'NEOFORGE_PARENT_RESOLUTION_FAILED',
+          { minecraftVersion },
+          { cause: error },
+        );
+      }
+      javaPath = await this.provisionJava(
+        baseVersion,
+        sender,
+        false,
+        javaOptions,
+      );
+    }
+
+    this.report(sender, {
+      phase: 'forge',
+      percent: 0,
+      message: `${loader === 'fabric' ? 'Fabric' : 'NeoForge'}を準備しています...`,
+    });
+    const versionId = await this.modLoaderService.ensureInstalled({
+      loader,
+      minecraftVersion,
+      loaderVersion,
+      resolvedVersionId,
+      javaPath,
+      offlineOnly,
+    });
+    this.report(sender, {
+      phase: 'forge',
+      percent: 100,
+      message: `${loader === 'fabric' ? 'Fabric' : 'NeoForge'}の準備が完了しました。`,
+    });
+    return versionId;
   }
 
   async launchVersion(

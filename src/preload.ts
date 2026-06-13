@@ -31,6 +31,8 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('profile:save', profile),
   getForgeBuilds: (minecraftVersion: string) =>
     ipcRenderer.invoke('forge:list-builds', minecraftVersion),
+  getModLoaderBuilds: (loader: string, minecraftVersion: string) =>
+    ipcRenderer.invoke('loader:list-builds', loader, minecraftVersion),
   listJavaRuntimes: (options?: Record<string, unknown>) =>
     ipcRenderer.invoke('java:list-runtimes', options ?? {}),
   addCustomJavaRuntime: () => ipcRenderer.invoke('java:add-custom'),

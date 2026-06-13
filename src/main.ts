@@ -40,6 +40,12 @@ import {
   type ModrinthProject,
   type ProfileMod,
 } from './modrinth-service';
+import {
+  resolvedModLoaderVersionId,
+  type ModLoaderType,
+} from './mod-loader-service';
+
+type ProfileLoader = 'vanilla' | ModLoaderType;
 
 type LauncherSettings = {
   gameDirectory: string;
@@ -53,14 +59,14 @@ type LauncherSettings = {
 type LaunchProfile = {
   id: string;
   name: string;
-  profileType: 'vanilla' | 'forge';
-  loaderType: 'vanilla' | 'forge';
+  profileType: ProfileLoader;
+  loaderType: ProfileLoader;
   minecraftVersion: string;
   loaderVersion: string | null;
   resolvedVersionId: string;
   // Compatibility aliases for settings written by versions before 1.5.
   versionId: string;
-  loader: 'vanilla' | 'forge';
+  loader: ProfileLoader;
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
@@ -259,23 +265,39 @@ const readSettings = async (): Promise<LauncherSettings> => {
               typeof profile.minMemory === 'number'
                 ? Math.max(512, Math.round(profile.minMemory))
                 : minMemory;
-            const loaderType =
-              profile.loaderType === 'forge' || profile.loader === 'forge'
-                ? 'forge'
+            const rawLoader =
+              typeof profile.loaderType === 'string'
+                ? profile.loaderType
+                : profile.loader;
+            const loaderType: ProfileLoader =
+              rawLoader === 'forge' ||
+              rawLoader === 'neoforge' ||
+              rawLoader === 'fabric'
+                ? rawLoader
                 : 'vanilla';
             const minecraftVersion =
               typeof profile.minecraftVersion === 'string'
                 ? profile.minecraftVersion
                 : profile.versionId;
             const loaderVersion =
-              loaderType === 'forge' &&
+              loaderType !== 'vanilla' &&
               typeof profile.loaderVersion === 'string' &&
               profile.loaderVersion.trim()
                 ? profile.loaderVersion.trim()
                 : null;
+            const savedResolvedVersionId =
+              typeof profile.resolvedVersionId === 'string' &&
+              /^[a-zA-Z0-9._+-]+$/.test(profile.resolvedVersionId)
+                ? profile.resolvedVersionId
+                : '';
             const resolvedVersionId =
-              loaderType === 'forge' && loaderVersion
-                ? `${minecraftVersion}-forge-${loaderVersion}`
+              loaderType !== 'vanilla' && loaderVersion
+                ? savedResolvedVersionId ||
+                  resolvedModLoaderVersionId(
+                    loaderType,
+                    minecraftVersion,
+                    loaderVersion,
+                  )
                 : minecraftVersion;
             // Profiles saved before instanceDir was added get the path that
             // the launcher already uses at runtime, so saves are not lost.
@@ -461,7 +483,8 @@ const openTrustedExternal = async (value: string) => {
 // mod loader, so they cannot host Modrinth mods.
 const profileModrinthLoader = (
   profile: LaunchProfile,
-): ModrinthLoader | null => (profile.loader === 'forge' ? 'forge' : null);
+): ModrinthLoader | null =>
+  profile.loader === 'vanilla' ? null : profile.loader;
 
 const findProfileOrThrow = (
   settings: LauncherSettings,
@@ -830,7 +853,9 @@ const getLauncherState = async () => {
         ? { ...profile, versionId: fallbackVersion }
         : profile;
     const installedProfileVersion = installedVersions.find(
-      (version) => version.id === profileWithFallback.versionId,
+      (version) =>
+        version.id === profileWithFallback.resolvedVersionId ||
+        version.id === profileWithFallback.versionId,
     );
     const normalized = normalizeLaunchProfileVersion(
       profileWithFallback,
@@ -1036,20 +1061,27 @@ const registerIpcHandlers = () => {
       typeof update.maxMemory === 'number'
         ? Math.max(minMemory, Math.round(update.maxMemory))
         : settings.maxMemory;
-    const loader =
-      update.loaderType === 'forge' || update.loader === 'forge'
-        ? 'forge'
+    const requestedLoader = update.loaderType ?? update.loader;
+    const loader: ProfileLoader =
+      requestedLoader === 'forge' ||
+      requestedLoader === 'neoforge' ||
+      requestedLoader === 'fabric'
+        ? requestedLoader
         : 'vanilla';
     const loaderVersion =
-      loader === 'forge' && typeof update.loaderVersion === 'string'
+      loader !== 'vanilla' && typeof update.loaderVersion === 'string'
         ? update.loaderVersion.trim()
         : null;
-    if (loader === 'forge' && !loaderVersion) {
-      throw new Error('Forge build must be selected.');
+    if (loader !== 'vanilla' && !loaderVersion) {
+      throw new Error(`${loader} build must be selected.`);
     }
     const resolvedVersionId =
-      loader === 'forge'
-        ? `${minecraftVersion}-forge-${loaderVersion}`
+      loader !== 'vanilla'
+        ? resolvedModLoaderVersionId(
+            loader,
+            minecraftVersion,
+            loaderVersion as string,
+          )
         : minecraftVersion;
     const existing = settings.profiles.find(
       (profile) => profile.id === update.id,
@@ -1072,7 +1104,7 @@ const registerIpcHandlers = () => {
         loader,
         minMemory,
         maxMemory,
-        mods: loader === 'forge' ? existing.mods : [],
+        mods: loader !== 'vanilla' ? existing.mods : [],
         java: javaSettings ?? existing.java,
         // instanceDir is intentionally not changed on edit to preserve existing saves.
       });
@@ -1113,6 +1145,36 @@ const registerIpcHandlers = () => {
         throw new Error('Minecraft version is required.');
       }
       return minecraftService.getForgeBuilds(minecraftVersion.trim());
+    },
+  );
+
+  trustedIpc.handle(
+    'loader:list-builds',
+    async (_event, loader: unknown, minecraftVersion: unknown) => {
+      if (
+        (loader !== 'forge' &&
+          loader !== 'neoforge' &&
+          loader !== 'fabric') ||
+        typeof minecraftVersion !== 'string' ||
+        !minecraftVersion.trim()
+      ) {
+        throw new Error('MOD loader and Minecraft version are required.');
+      }
+      if (loader === 'forge') {
+        return (await minecraftService.getForgeBuilds(
+          minecraftVersion.trim(),
+        )).map((build) => ({
+          loader,
+          minecraftVersion: build.minecraftVersion,
+          loaderVersion: build.loaderVersion,
+          resolvedVersionId: build.resolvedVersionId,
+          stable: true,
+        }));
+      }
+      return minecraftService.getModLoaderBuilds(
+        loader,
+        minecraftVersion.trim(),
+      );
     },
   );
 
@@ -1285,12 +1347,13 @@ const registerIpcHandlers = () => {
         limit?: number;
         offset?: number;
       };
+      const loader = profileModrinthLoader(profile);
+      if (!loader) {
+        throw new Error('Modrinth MOD requires a mod-loader profile.');
+      }
       return modrinthService.searchMods(query, {
-        loader: options.loader ?? profileModrinthLoader(profile) ?? undefined,
-        gameVersion:
-          typeof options.gameVersion === 'string'
-            ? options.gameVersion
-            : profile.minecraftVersion,
+        loader,
+        gameVersion: profile.minecraftVersion,
         limit: options.limit,
         offset: options.offset,
       });
@@ -1306,24 +1369,19 @@ const registerIpcHandlers = () => {
 
   trustedIpc.handle(
     'modrinth:get-versions',
-    async (_event, profileId: unknown, idOrSlug: unknown, input: unknown) => {
+    async (_event, profileId: unknown, idOrSlug: unknown) => {
       if (typeof idOrSlug !== 'string') {
         throw new Error('プロジェクト指定が不正です。');
       }
       const settings = await readSettings();
       const profile = findProfileOrThrow(settings, profileId);
-      const options = (input ?? {}) as {
-        loader?: ModrinthLoader;
-        gameVersion?: string;
-      };
-      const loader = options.loader ?? profileModrinthLoader(profile);
-      const gameVersion =
-        typeof options.gameVersion === 'string'
-          ? options.gameVersion
-          : profile.minecraftVersion;
+      const loader = profileModrinthLoader(profile);
+      if (!loader) {
+        throw new Error('Modrinth MOD requires a mod-loader profile.');
+      }
       return modrinthService.getProjectVersions(idOrSlug, {
-        loaders: loader ? [loader] : undefined,
-        gameVersions: gameVersion ? [gameVersion] : undefined,
+        loaders: [loader],
+        gameVersions: [profile.minecraftVersion],
       });
     },
   );
@@ -1346,6 +1404,14 @@ const registerIpcHandlers = () => {
         );
       }
       const version = await modrinthService.getVersionInfo(versionId);
+      if (
+        !version.loaders.includes(loader) ||
+        !version.gameVersions.includes(profile.minecraftVersion)
+      ) {
+        throw new Error(
+          `The selected MOD version is not compatible with ${loader} / Minecraft ${profile.minecraftVersion}.`,
+        );
+      }
       const instanceDirectory = await resolveInstanceDirectory(profile);
       return modrinthService.downloadVersion(
         {
@@ -1505,7 +1571,9 @@ const registerIpcHandlers = () => {
         settings.gameDirectory,
       );
       const selectedInstalledVersion = installedVersions.find(
-        (version) => version.id === profile.versionId,
+        (version) =>
+          version.id === profile.resolvedVersionId ||
+          version.id === profile.versionId,
       );
       const normalizedProfile = normalizeLaunchProfileVersion(
         profile,
@@ -1531,14 +1599,18 @@ const registerIpcHandlers = () => {
           event.sender,
         );
       }
-      if (profile.loader === 'forge' && !profile.loaderVersion) {
-        throw new Error('Forge build is not selected for this profile.');
+      if (profile.loader !== 'vanilla' && !profile.loaderVersion) {
+        throw new Error(
+          `${profile.loader} build is not selected for this profile.`,
+        );
       }
       const versionId =
-        profile.loader === 'forge'
-          ? await minecraftService.ensureForge(
+        profile.loader !== 'vanilla'
+          ? await minecraftService.ensureModLoader(
+              profile.loader,
               profile.minecraftVersion,
               profile.loaderVersion as string,
+              profile.resolvedVersionId,
               event.sender,
               offlineOnly,
               { javaSettings: profile.java, instanceId: profile.id },

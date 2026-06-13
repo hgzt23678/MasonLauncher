@@ -60,9 +60,9 @@ export type LaunchProfileVersionFields = {
   versionId: string;
   minecraftVersion: string;
   resolvedVersionId: string;
-  loader: 'vanilla' | 'forge';
-  loaderType: 'vanilla' | 'forge';
-  profileType: 'vanilla' | 'forge';
+  loader: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  loaderType: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  profileType: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
   loaderVersion: string | null;
 };
 
@@ -77,26 +77,42 @@ export const normalizeLaunchProfileVersion = <
   profile: T,
   installedVersion?: InstalledVersionIdentity,
 ): T => {
-  const detectedForge =
-    Boolean(installedVersion?.inheritsFrom) &&
-    /(?:^|[-_.])forge(?:[-_.]|$)/i.test(installedVersion?.id ?? '');
-  const loader = detectedForge ? 'forge' : profile.loader;
-  const versionId = detectedForge
+  const installedId = installedVersion?.id ?? '';
+  const detectedLoader = installedVersion?.inheritsFrom
+    ? /neoforge/i.test(installedId)
+      ? 'neoforge'
+      : /fabric/i.test(installedId)
+        ? 'fabric'
+        : /(?:^|[-_.])forge(?:[-_.]|$)/i.test(installedId)
+          ? 'forge'
+          : null
+    : null;
+  const loader = detectedLoader ?? profile.loader;
+  const versionId = detectedLoader
     ? installedVersion?.inheritsFrom ?? profile.versionId
     : profile.versionId || profile.minecraftVersion;
-  const detectedLoaderVersion = detectedForge
-    ? installedVersion?.id.match(/-forge-(.+)$/i)?.[1] ?? null
-    : null;
+  const detectedLoaderVersion =
+    detectedLoader === 'forge'
+      ? installedId.match(/-forge-(.+)$/i)?.[1] ?? null
+      : detectedLoader === 'fabric'
+        ? installedId.match(/-fabric(?:-loader-)?(.+)$/i)?.[1] ?? null
+        : detectedLoader === 'neoforge'
+          ? installedId.match(/neoforge[-_.]?(.+)$/i)?.[1] ?? null
+          : null;
   const loaderVersion =
-    loader === 'forge'
+    loader !== 'vanilla'
       ? detectedLoaderVersion ?? profile.loaderVersion
       : null;
   const resolvedVersionId =
-    detectedForge && installedVersion
+    detectedLoader && installedVersion
       ? installedVersion.id
       : loader === 'forge' && loaderVersion
         ? `${versionId}-forge-${loaderVersion}`
-        : versionId;
+        : loader === 'fabric' && loaderVersion
+          ? `${versionId}-fabric${loaderVersion}`
+          : loader === 'neoforge' && loaderVersion
+            ? `neoforge-${loaderVersion}`
+            : versionId;
 
   return {
     ...profile,

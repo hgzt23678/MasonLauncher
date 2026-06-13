@@ -261,13 +261,16 @@
           <md-tabs id="profile-type-tabs">
             <md-primary-tab data-profile-tab="vanilla">Vanilla</md-primary-tab>
             <md-primary-tab data-profile-tab="forge">Forge</md-primary-tab>
-            <md-primary-tab data-profile-tab="modrinth">Modrinth</md-primary-tab>
+            <md-primary-tab data-profile-tab="neoforge">NeoForge</md-primary-tab>
+            <md-primary-tab data-profile-tab="fabric">Fabric</md-primary-tab>
           </md-tabs>
 
           <!-- Hidden native select kept for JS value tracking -->
           <select id="profile-loader-select" style="display:none">
             <option value="vanilla">Vanilla</option>
             <option value="forge">Forge</option>
+            <option value="neoforge">NeoForge</option>
+            <option value="fabric">Fabric</option>
           </select>
 
           <div id="profile-vanilla-panel" class="tab-panel">
@@ -281,8 +284,28 @@
 
         <div class="settings-section forge-version-panel tab-panel" id="profile-forge-panel" hidden>
           <md-filled-select id="profile-forge-minecraft-select" label="Minecraft バージョン"></md-filled-select>
-          <md-filled-select id="profile-forge-version-select" label="Forge build" disabled></md-filled-select>
-          <p id="profile-forge-build-status" class="forge-status-text">Forge buildを選択してください。</p>
+          <md-filled-select id="profile-forge-version-select" label="MOD loader build" disabled></md-filled-select>
+          <p id="profile-forge-build-status" class="forge-status-text">MOD loader buildを選択してください。</p>
+
+          <div class="profile-mods-section" id="profile-mods-section">
+            <div class="profile-mods-heading">
+              <div>
+                <strong>Modrinth MOD</strong>
+                <small id="profile-mod-search-description">選択したMinecraft版とMODローダーに対応するMODを表示します。</small>
+              </div>
+              <span id="profile-mod-count">0 MOD</span>
+            </div>
+            <div class="mod-search-row">
+              <md-outlined-text-field
+                id="mod-search-input"
+                placeholder="MOD名を検索（空欄は人気順）"
+                style="flex:1"
+              ></md-outlined-text-field>
+              <md-outlined-button id="mod-search-button" type="button">検索</md-outlined-button>
+            </div>
+            <div class="selected-mod-list" id="selected-mod-list"></div>
+            <div class="mod-search-results" id="mod-search-results"></div>
+          </div>
         </div>
 
         <div class="settings-section memory-settings">
@@ -310,26 +333,6 @@
             label="追加JVM引数（任意・空白区切り）"
             placeholder="例: -XX:+UseG1GC"
           ></md-filled-text-field>
-        </div>
-
-        <div class="profile-mods-section" id="profile-mods-section">
-          <div class="profile-mods-heading">
-            <div>
-              <strong>Modrinth MOD</strong>
-              <small>選択したMinecraft版とForgeに対応するMODだけを表示します。</small>
-            </div>
-            <span id="profile-mod-count">0 MOD</span>
-          </div>
-          <div class="mod-search-row">
-            <md-outlined-text-field
-              id="mod-search-input"
-              placeholder="MODを検索..."
-              style="flex:1"
-            ></md-outlined-text-field>
-            <md-outlined-button id="mod-search-button" type="button">検索</md-outlined-button>
-          </div>
-          <div class="selected-mod-list" id="selected-mod-list"></div>
-          <div class="mod-search-results" id="mod-search-results"></div>
         </div>
 
         <div class="profile-editor-actions">

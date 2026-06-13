@@ -102,6 +102,9 @@ type ProfileMod = {
   iconUrl: string | null;
 };
 
+type ProfileLoader = 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+type ModLoader = Exclude<ProfileLoader, 'vanilla'>;
+
 type JavaDistributionId = 'liberica-lite' | 'liberica' | 'zulu' | 'temurin';
 
 type ProfileJavaSettings = {
@@ -150,13 +153,13 @@ const javaDistributionLabels: Record<string, string> = {
 type LaunchProfile = {
   id: string;
   name: string;
-  profileType: 'vanilla' | 'forge';
-  loaderType: 'vanilla' | 'forge';
+  profileType: ProfileLoader;
+  loaderType: ProfileLoader;
   minecraftVersion: string;
   loaderVersion: string | null;
   resolvedVersionId: string;
   versionId: string;
-  loader: 'vanilla' | 'forge';
+  loader: ProfileLoader;
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
@@ -164,17 +167,43 @@ type LaunchProfile = {
   instanceDir: string;
 };
 
-type ForgeBuild = {
+type ModLoaderBuild = {
+  loader: ModLoader;
   minecraftVersion: string;
   loaderVersion: string;
-  artifactVersion: string;
   resolvedVersionId: string;
-  installerUrl: string;
+  stable: boolean;
 };
 
-type ModrinthProject = ProfileMod & {
+type ModrinthSearchHit = ProfileMod & {
   description: string;
   downloads: number;
+  follows: number;
+  categories: string[];
+  clientSide: string;
+  serverSide: string;
+  latestVersion: string | null;
+};
+
+type ModrinthVersionInfo = {
+  id: string;
+  projectId: string;
+  name: string;
+  versionNumber: string;
+  versionType: 'release' | 'beta' | 'alpha';
+  gameVersions: string[];
+  loaders: string[];
+  datePublished: string | null;
+};
+
+type InstalledModRecord = {
+  projectId: string | null;
+  versionId: string;
+  fileName: string;
+  title: string;
+  loader: string;
+  minecraftVersion: string;
+  dateInstalled: string;
 };
 
 type LauncherState = {
@@ -390,15 +419,26 @@ const api = window.launcher ?? {
     return demoState;
   },
   saveProfile: async () => demoState,
-  getForgeBuilds: async (minecraftVersion: string): Promise<ForgeBuild[]> => [
+  getModLoaderBuilds: async (
+    loader: ModLoader,
+    minecraftVersion: string,
+  ): Promise<ModLoaderBuild[]> => [
     {
+      loader,
       minecraftVersion,
-      loaderVersion: '47.4.0',
-      artifactVersion: `${minecraftVersion}-47.4.0`,
-      resolvedVersionId: `${minecraftVersion}-forge-47.4.0`,
-      installerUrl:
-        `https://maven.minecraftforge.net/net/minecraftforge/forge/` +
-        `${minecraftVersion}-47.4.0/forge-${minecraftVersion}-47.4.0-installer.jar`,
+      loaderVersion:
+        loader === 'forge'
+          ? '47.4.0'
+          : loader === 'neoforge'
+            ? '21.1.200'
+            : '0.16.14',
+      resolvedVersionId:
+        loader === 'forge'
+          ? `${minecraftVersion}-forge-47.4.0`
+          : loader === 'neoforge'
+            ? 'neoforge-21.1.200'
+            : `${minecraftVersion}-fabric0.16.14`,
+      stable: true,
     },
   ],
   selectProfile: async () => demoState,
@@ -442,7 +482,7 @@ const api = window.launcher ?? {
   }),
   chooseJavaExecutable: async () => null,
   onJavaInstallProgress: () => () => undefined,
-  searchModrinth: async (): Promise<ModrinthProject[]> => [
+  modrinthSearchMods: async (): Promise<ModrinthSearchHit[]> => [
     {
       projectId: 'demo-project',
       slug: 'example-mod',
@@ -450,10 +490,52 @@ const api = window.launcher ?? {
       description: 'Modrinthから取得するMODのプレビューです。',
       iconUrl: null,
       downloads: 1250000,
+      follows: 1000,
+      categories: ['fabric'],
+      clientSide: 'required',
+      serverSide: 'optional',
+      latestVersion: 'demo-version',
     },
   ],
-  addMod: async () => demoState,
-  removeMod: async () => demoState,
+  modrinthGetVersions: async (): Promise<ModrinthVersionInfo[]> => [
+    {
+      id: 'demo-version',
+      projectId: 'demo-project',
+      name: 'Example Mod 1.0',
+      versionNumber: '1.0.0',
+      versionType: 'release',
+      gameVersions: ['1.20.1'],
+      loaders: ['forge'],
+      datePublished: new Date().toISOString(),
+    },
+  ],
+  modrinthDownloadVersion: async () => ({
+    fileName: 'example-mod.jar',
+    filePath: 'C:\\demo\\mods\\example-mod.jar',
+    alreadyPresent: false,
+    renamed: false,
+    record: {
+      projectId: 'demo-project',
+      versionId: 'demo-version',
+      fileName: 'example-mod.jar',
+      title: 'Example Mod',
+      sha1: null,
+      sha512: null,
+      loader: 'forge',
+      minecraftVersion: '1.20.1',
+      dateInstalled: new Date().toISOString(),
+      source: 'modrinth' as const,
+    },
+    requiredDependencies: [],
+    optionalDependencies: [],
+    incompatibleDependencies: [],
+    embeddedDependencies: [],
+  }),
+  modrinthListInstalledMods: async (): Promise<InstalledModRecord[]> => [],
+  modrinthRemoveInstalledMod: async () => ({
+    removed: true,
+    mods: [] as InstalledModRecord[],
+  }),
   login: async () => {
     if (previewParameters.has('auth-error')) {
       throw new Error(previewAuthError);
@@ -575,6 +657,9 @@ const profileForgeBuildStatus = byId<HTMLElement>('profile-forge-build-status');
 const profileMinMemoryInput = byId<HTMLElement>('profile-min-memory-input');
 const profileMaxMemoryInput = byId<HTMLElement>('profile-max-memory-input');
 const profileModsSection = byId<HTMLElement>('profile-mods-section');
+const profileModSearchDescription = byId<HTMLElement>(
+  'profile-mod-search-description',
+);
 const profileModCount = byId<HTMLElement>('profile-mod-count');
 const selectedModList = byId<HTMLElement>('selected-mod-list');
 const modSearchInput = byId<HTMLElement>('mod-search-input');
@@ -603,12 +688,39 @@ let busy = false;
 let toastTimer: number | undefined;
 let deviceCodeTimer: number | undefined;
 let developerLogs: LauncherLogEntry[] = [];
-let forgeBuilds: ForgeBuild[] = [];
+let modLoaderBuilds: ModLoaderBuild[] = [];
+let installedMods: InstalledModRecord[] = [];
 let javaRuntimes: JavaRuntimeInfo[] = [];
 let javaRuntimesLoaded = false;
 let pendingCustomJavaPath: string | null = null;
 let showSnapshots = false;
-let profileEditorMode: 'create' | 'edit' = 'create';
+
+const isModLoader = (loader: ProfileLoader): loader is ModLoader =>
+  loader !== 'vanilla';
+
+const loaderLabel = (loader: ProfileLoader) =>
+  loader === 'neoforge'
+    ? 'NeoForge'
+    : loader === 'fabric'
+      ? 'Fabric'
+      : loader === 'forge'
+        ? 'Forge'
+        : 'Vanilla';
+
+const resolvedVersionIdFor = (
+  loader: ProfileLoader,
+  minecraftVersion: string,
+  loaderVersion: string | null,
+) => {
+  if (!loaderVersion || loader === 'vanilla') return minecraftVersion;
+  if (loader === 'forge') {
+    return `${minecraftVersion}-forge-${loaderVersion}`;
+  }
+  if (loader === 'fabric') {
+    return `${minecraftVersion}-fabric${loaderVersion}`;
+  }
+  return `neoforge-${loaderVersion}`;
+};
 
 const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
   developerLogs = entries.slice(-500);
@@ -722,7 +834,8 @@ const renderAuth = (auth: AuthState) => {
 
 const createProfileCard = (profile: LaunchProfile) => {
   const isActive = profile.id === currentState?.selectedProfileId;
-  const isForge = profile.loaderType === 'forge';
+  const modded = isModLoader(profile.loaderType);
+  const displayLoader = loaderLabel(profile.loaderType);
   const versionInfo = currentState?.availableVersions.find(
     (v) => v.id === profile.minecraftVersion,
   );
@@ -737,13 +850,13 @@ const createProfileCard = (profile: LaunchProfile) => {
 
   // ── Art area ──
   const art = document.createElement('div');
-  art.className = `profile-card-art ${isForge ? 'forge' : 'vanilla'}`;
+  art.className = `profile-card-art ${modded ? 'forge' : 'vanilla'}`;
   art.setAttribute('aria-hidden', 'true');
   const artGrid = document.createElement('div');
   artGrid.className = 'profile-art-grid';
   const artIcon = document.createElement('div');
   artIcon.className = 'profile-art-icon';
-  artIcon.textContent = isForge ? 'F' : 'V';
+  artIcon.textContent = displayLoader.slice(0, 1);
   art.append(artGrid, artIcon);
 
   // ── Body ──
@@ -753,8 +866,8 @@ const createProfileCard = (profile: LaunchProfile) => {
   const badges = document.createElement('div');
   badges.className = 'profile-badges';
   const loaderBadge = document.createElement('span');
-  loaderBadge.className = `badge badge-loader${isForge ? ' forge' : ''}`;
-  loaderBadge.textContent = isForge ? 'FORGE' : 'VANILLA';
+  loaderBadge.className = `badge badge-loader${modded ? ' forge' : ''}`;
+  loaderBadge.textContent = displayLoader.toUpperCase();
   badges.append(loaderBadge);
   if (profile.mods.length > 0) {
     const modBadge = document.createElement('span');
@@ -770,8 +883,8 @@ const createProfileCard = (profile: LaunchProfile) => {
   const version = document.createElement('p');
   version.className = 'profile-card-version';
   version.textContent =
-    isForge
-      ? `Minecraft ${profile.minecraftVersion} / Forge ${profile.loaderVersion ?? '未選択'}`
+    modded
+      ? `Minecraft ${profile.minecraftVersion} / ${displayLoader} ${profile.loaderVersion ?? '未選択'}`
       : `Minecraft ${profile.minecraftVersion}`;
 
   const memory = document.createElement('p');
@@ -984,9 +1097,12 @@ const refreshState = async () => {
 
 const updateProfileSaveAvailability = () => {
   if (!saveProfileButton) return;
-  const forgeSelected = profileLoaderSelect?.value === 'forge';
-  const forgeVersionVal = (profileForgeVersionSelect as MdEl)?.value as string | undefined;
-  (saveProfileButton as MdEl).disabled = forgeSelected && !forgeVersionVal;
+  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loaderVersion = (profileForgeVersionSelect as MdEl)?.value as
+    | string
+    | undefined;
+  (saveProfileButton as MdEl).disabled =
+    isModLoader(loader) && !loaderVersion;
 };
 
 const populateForgeMinecraftSelect = (value: string) => {
@@ -1007,49 +1123,59 @@ const populateForgeMinecraftSelect = (value: string) => {
   }
 };
 
-const loadForgeBuilds = async (
+const loadModLoaderBuilds = async (
+  loader: ModLoader,
   minecraftVersion: string,
   selectedLoaderVersion = '',
 ) => {
   if (!profileForgeVersionSelect || !profileForgeBuildStatus) return;
+  const label = loaderLabel(loader);
   (profileForgeVersionSelect as MdEl).disabled = true;
   profileForgeVersionSelect.replaceChildren();
-  profileForgeBuildStatus.textContent = 'Forge build一覧を取得しています...';
+  profileForgeBuildStatus.textContent = `${label} build一覧を取得しています...`;
   updateProfileSaveAvailability();
   try {
-    forgeBuilds = await api.getForgeBuilds(minecraftVersion);
+    modLoaderBuilds = await api.getModLoaderBuilds(
+      loader,
+      minecraftVersion,
+    );
     const placeholder = createSelectOption(
-      'Forge buildを選択してください',
+      `${label} buildを選択してください`,
       '',
     );
     profileForgeVersionSelect.append(placeholder);
-    for (const build of forgeBuilds) {
+    for (const build of modLoaderBuilds) {
       const option = createSelectOption(
-        `Minecraft ${build.minecraftVersion} / Forge ${build.loaderVersion}`,
+        `Minecraft ${build.minecraftVersion} / ${label} ${build.loaderVersion}${
+          build.stable ? '' : ' (preview)'
+        }`,
         build.loaderVersion,
       );
       profileForgeVersionSelect.append(option);
     }
     if (
       selectedLoaderVersion &&
-      forgeBuilds.some((build) => build.loaderVersion === selectedLoaderVersion)
+      modLoaderBuilds.some(
+        (build) => build.loaderVersion === selectedLoaderVersion,
+      )
     ) {
       (profileForgeVersionSelect as MdEl).value = selectedLoaderVersion;
     }
-    (profileForgeVersionSelect as MdEl).disabled = forgeBuilds.length === 0;
+    (profileForgeVersionSelect as MdEl).disabled =
+      modLoaderBuilds.length === 0;
     const currentVal = (profileForgeVersionSelect as MdEl).value as string;
     profileForgeBuildStatus.textContent =
-      forgeBuilds.length > 0
+      modLoaderBuilds.length > 0
         ? selectedLoaderVersion
-          ? `${forgeBuilds.length} builds / 選択中: Forge ${currentVal}`
-          : `${forgeBuilds.length} builds / Forge buildを選択してください。`
-        : `Minecraft ${minecraftVersion} に対応するForge buildがありません。`;
+          ? `${modLoaderBuilds.length} builds / 選択中: ${label} ${currentVal}`
+          : `${modLoaderBuilds.length} builds / ${label} buildを選択してください。`
+        : `Minecraft ${minecraftVersion} に対応する${label} buildがありません。`;
   } catch (error) {
-    forgeBuilds = [];
+    modLoaderBuilds = [];
     profileForgeBuildStatus.textContent =
       error instanceof Error
         ? error.message
-        : 'Forge build一覧を取得できませんでした。';
+        : `${label} build一覧を取得できませんでした。`;
     showToast(profileForgeBuildStatus.textContent, true);
   } finally {
     updateProfileSaveAvailability();
@@ -1057,7 +1183,7 @@ const loadForgeBuilds = async (
 };
 
 const setProfileTab = (
-  tab: 'vanilla' | 'forge' | 'modrinth',
+  tab: ProfileLoader,
   updateLoader = true,
 ) => {
   // Drive md-tabs active index
@@ -1071,63 +1197,74 @@ const setProfileTab = (
   }
 
   if (profileVanillaPanel) profileVanillaPanel.hidden = tab !== 'vanilla';
-  if (profileForgePanel) profileForgePanel.hidden = tab !== 'forge';
-  if (profileModsSection) profileModsSection.hidden = tab !== 'modrinth';
+  if (profileForgePanel) profileForgePanel.hidden = tab === 'vanilla';
 
   if (updateLoader && profileLoaderSelect) {
-    if (tab === 'vanilla') profileLoaderSelect.value = 'vanilla';
-    if (tab === 'forge') profileLoaderSelect.value = 'forge';
+    profileLoaderSelect.value = tab;
   }
-  renderSelectedMods(editorProfile());
+  if (profileModSearchDescription && tab !== 'vanilla') {
+    profileModSearchDescription.textContent =
+      `Minecraft版と${loaderLabel(tab)}に対応するMODを表示します。` +
+      ' 空欄検索は人気順です。';
+  }
+  renderSelectedMods();
   updateProfileSaveAvailability();
 };
 
-const renderSelectedMods = (profile: LaunchProfile | undefined) => {
+const renderSelectedMods = () => {
   if (!selectedModList || !profileModCount || !profileModsSection) return;
-  const forge = profileLoaderSelect?.value === 'forge';
-  profileModsSection.classList.toggle('disabled', !forge);
-  profileModCount.textContent = `${profile?.mods.length ?? 0} MOD`;
+  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const modded = isModLoader(loader);
+  profileModsSection.classList.toggle('disabled', !modded);
+  profileModCount.textContent = `${installedMods.length} MOD`;
   selectedModList.replaceChildren();
 
-  if (!profile?.id) {
+  if (!profileIdInput?.value) {
     const note = document.createElement('p');
     note.className = 'empty-mod-message';
-    note.textContent =
-      'MODを追加するには、先にプロファイルを保存してください。';
+    note.textContent = 'MODを追加するには、先にプロファイルを保存してください。';
     selectedModList.append(note);
     return;
   }
-  if (profile.mods.length === 0) {
+  if (installedMods.length === 0) {
     const note = document.createElement('p');
     note.className = 'empty-mod-message';
-    note.textContent = forge
-      ? '追加済みのMODはありません。'
-      : 'Forgeを選択するとMODを追加できます。';
+    note.textContent = modded
+      ? 'このインスタンスにインストール済みのMODはありません。'
+      : 'MODローダーを選択するとMODを追加できます。';
     selectedModList.append(note);
     return;
   }
 
-  for (const mod of profile.mods) {
+  for (const mod of installedMods) {
     const row = document.createElement('div');
     row.className = 'selected-mod-row';
     const icon = document.createElement('span');
     icon.className = 'mod-icon';
-    if (mod.iconUrl) {
-      const image = document.createElement('img');
-      image.src = mod.iconUrl;
-      image.alt = '';
-      icon.append(image);
-    } else {
-      icon.textContent = mod.title.slice(0, 1);
-    }
+    icon.textContent = mod.title.slice(0, 1);
     const name = document.createElement('strong');
     name.textContent = mod.title;
     const remove = document.createElement('md-text-button') as unknown as HTMLButtonElement;
-    remove.dataset.projectId = mod.projectId;
+    remove.dataset.projectId = mod.projectId ?? mod.fileName;
     remove.textContent = '削除';
     row.append(icon, name, remove);
     selectedModList.append(row);
   }
+};
+
+const loadInstalledMods = async (profileId: string) => {
+  try {
+    installedMods = await api.modrinthListInstalledMods(profileId);
+  } catch (error) {
+    installedMods = [];
+    showToast(
+      error instanceof Error
+        ? error.message
+        : 'インストール済みMODを読み込めませんでした。',
+      true,
+    );
+  }
+  renderSelectedMods();
 };
 
 // --- Java runtime management -------------------------------------------------
@@ -1325,18 +1462,10 @@ const collectProfileJavaSettings = (): ProfileJavaSettings => {
 
 const openProfileEditor = (profile?: LaunchProfile) => {
   if (!currentState) return;
-  profileEditorMode = profile ? 'edit' : 'create';
   if (profileModalTitle) {
     profileModalTitle.textContent = profile
       ? 'プロファイルを編集'
       : 'プロファイルを作成';
-  }
-  // Modrinth search is only available in edit mode (profile must exist first).
-  const modrinthTab = document.querySelector<HTMLElement>(
-    '[data-profile-tab="modrinth"]',
-  );
-  if (modrinthTab) {
-    modrinthTab.hidden = profileEditorMode === 'create';
   }
   if (profileIdInput) profileIdInput.value = profile?.id ?? '';
   if (profileNameInput) (profileNameInput as MdEl).value = profile?.name ?? '';
@@ -1374,16 +1503,17 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   if (deleteProfileButton) deleteProfileButton.hidden = !profile;
   modSearchResults?.replaceChildren();
   if (modSearchInput) (modSearchInput as MdEl).value = '';
-  forgeBuilds = [];
+  modLoaderBuilds = [];
+  installedMods = [];
   if (profileForgeVersionSelect) {
     profileForgeVersionSelect.replaceChildren(
-      createSelectOption('Forge buildを選択してください', ''),
+      createSelectOption('MOD loader buildを選択してください', ''),
     );
     (profileForgeVersionSelect as MdEl).disabled = true;
   }
   if (profileForgeBuildStatus) {
     profileForgeBuildStatus.textContent =
-      'Forge buildを選択してください。';
+      'MOD loader buildを選択してください。';
   }
   const javaSettings = profile?.java ?? defaultJavaSettings();
   populateProfileJavaSelect(javaSettings);
@@ -1392,16 +1522,30 @@ const openProfileEditor = (profile?: LaunchProfile) => {
       populateProfileJavaSelect(javaSettings),
     );
   }
-  renderSelectedMods(profile);
+  renderSelectedMods();
   profileModal?.removeAttribute('hidden');
-  const initialTab =
-    profile?.loaderType === 'forge' ? 'forge' : 'vanilla';
+  const initialTab = profile?.loaderType ?? 'vanilla';
   setProfileTab(initialTab, false);
-  if (initialTab === 'forge' && minecraftVersion) {
-    void loadForgeBuilds(
+  if (isModLoader(initialTab) && minecraftVersion) {
+    void loadModLoaderBuilds(
+      initialTab,
       minecraftVersion,
       profile?.loaderVersion ?? '',
     );
+    if (profile?.id) {
+      void loadInstalledMods(profile.id);
+      void api
+        .modrinthSearchMods(profile.id, '')
+        .then(renderModSearchResults)
+        .catch((error) =>
+          showToast(
+            error instanceof Error
+              ? error.message
+              : '人気MODを読み込めませんでした。',
+            true,
+          ),
+        );
+    }
   }
 };
 
@@ -1414,18 +1558,18 @@ const saveProfileEditor = async (close = true) => {
   if (!saveProfileButton) return undefined;
   (saveProfileButton as MdEl).disabled = true;
   try {
-    const loader =
-      profileLoaderSelect?.value === 'forge' ? 'forge' : 'vanilla';
+    const loader = (profileLoaderSelect?.value ??
+      'vanilla') as ProfileLoader;
     const minecraftVersion =
-      loader === 'forge'
+      isModLoader(loader)
         ? ((profileForgeMinecraftSelect as MdEl)?.value as string) ?? ''
         : ((profileVersionSelect as MdEl)?.value as string) ?? '';
     const loaderVersion =
-      loader === 'forge'
+      isModLoader(loader)
         ? ((profileForgeVersionSelect as MdEl)?.value as string) ?? ''
         : null;
-    if (loader === 'forge' && !loaderVersion) {
-      throw new Error('Forge buildを選択してください。');
+    if (isModLoader(loader) && !loaderVersion) {
+      throw new Error(`${loaderLabel(loader)} buildを選択してください。`);
     }
     // Snapshot warning (non-blocking — toast only).
     if (loader === 'vanilla') {
@@ -1444,9 +1588,7 @@ const saveProfileEditor = async (close = true) => {
       minecraftVersion,
       loaderVersion,
       resolvedVersionId:
-        loader === 'forge'
-          ? `${minecraftVersion}-forge-${loaderVersion}`
-          : minecraftVersion,
+        resolvedVersionIdFor(loader, minecraftVersion, loaderVersion),
       versionId: minecraftVersion,
       loader,
       minMemory: Number((profileMinMemoryInput as MdEl)?.value ?? 1024),
@@ -1459,7 +1601,7 @@ const saveProfileEditor = async (close = true) => {
       closeProfileModal();
       showToast('プロファイルを保存しました。');
     } else {
-      renderSelectedMods(selectedProfile());
+      await loadInstalledMods(state.selectedProfileId);
     }
     return state;
   } catch (error) {
@@ -1475,7 +1617,7 @@ const saveProfileEditor = async (close = true) => {
   }
 };
 
-const renderModSearchResults = (projects: ModrinthProject[]) => {
+const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
   if (!modSearchResults) return;
   modSearchResults.replaceChildren();
   if (projects.length === 0) {
@@ -1485,7 +1627,11 @@ const renderModSearchResults = (projects: ModrinthProject[]) => {
     modSearchResults.append(empty);
     return;
   }
-  const installedIds = new Set(editorProfile()?.mods.map((mod) => mod.projectId));
+  const installedIds = new Set(
+    installedMods
+      .map((mod) => mod.projectId)
+      .filter((projectId): projectId is string => Boolean(projectId)),
+  );
   for (const project of projects) {
     const item = document.createElement('article');
     item.className = 'mod-result';
@@ -1511,7 +1657,7 @@ const renderModSearchResults = (projects: ModrinthProject[]) => {
     add.dataset.project = JSON.stringify(project);
     const installed = installedIds.has(project.projectId);
     add.disabled = installed;
-    add.textContent = installed ? '追加済み' : '追加';
+    add.textContent = installed ? '追加済み' : 'ダウンロード';
     item.append(icon, copy, add);
     modSearchResults.append(item);
   }
@@ -1658,7 +1804,7 @@ deleteProfileButton?.addEventListener('click', async () => {
 });
 
 profileLoaderSelect?.addEventListener('change', () => {
-  renderSelectedMods(editorProfile());
+  renderSelectedMods();
 });
 
 document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
@@ -1666,16 +1812,25 @@ document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
   const allTabs = [...(tabsEl?.querySelectorAll('[data-profile-tab]') ?? [])];
   const active = allTabs.find((t) => (t as MdEl).active);
   const tab = (active as HTMLElement | undefined)?.dataset.profileTab;
-  if (tab !== 'vanilla' && tab !== 'forge' && tab !== 'modrinth') return;
+  if (
+    tab !== 'vanilla' &&
+    tab !== 'forge' &&
+    tab !== 'neoforge' &&
+    tab !== 'fabric'
+  ) {
+    return;
+  }
   setProfileTab(tab);
   if (
-    tab === 'forge' &&
-    (profileForgeMinecraftSelect as MdEl)?.value &&
-    forgeBuilds.length === 0
+    isModLoader(tab) &&
+    (profileForgeMinecraftSelect as MdEl)?.value
   ) {
-    void loadForgeBuilds(
+    void loadModLoaderBuilds(
+      tab,
       (profileForgeMinecraftSelect as MdEl).value as string,
-      editorProfile()?.loaderVersion ?? '',
+      editorProfile()?.loaderType === tab
+        ? editorProfile()?.loaderVersion ?? ''
+        : '',
     );
   }
 });
@@ -1683,23 +1838,28 @@ document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
 profileForgeMinecraftSelect?.addEventListener('change', () => {
   const val = (profileForgeMinecraftSelect as MdEl).value as string;
   if (!val) return;
-  void loadForgeBuilds(val);
+  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  if (isModLoader(loader)) {
+    void loadModLoaderBuilds(loader, val);
+  }
 });
 
 profileForgeVersionSelect?.addEventListener('change', () => {
-  const forgeVal = (profileForgeVersionSelect as MdEl).value as string;
+  const loaderVersion = (profileForgeVersionSelect as MdEl).value as string;
   const mcVal = (profileForgeMinecraftSelect as MdEl)?.value as string;
+  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
   if (profileForgeBuildStatus) {
-    profileForgeBuildStatus.textContent = forgeVal
-      ? `Minecraft ${mcVal} / Forge ${forgeVal}`
-      : 'Forge buildを選択してください。';
+    profileForgeBuildStatus.textContent = loaderVersion
+      ? `Minecraft ${mcVal} / ${loaderLabel(loader)} ${loaderVersion}`
+      : `${loaderLabel(loader)} buildを選択してください。`;
   }
   updateProfileSaveAvailability();
 });
 
 modSearchButton?.addEventListener('click', async () => {
-  if (profileLoaderSelect?.value !== 'forge') {
-    showToast('MODを追加するにはForgeを選択してください。', true);
+  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  if (!isModLoader(loader)) {
+    showToast('MODを追加するにはMODローダーを選択してください。', true);
     return;
   }
   (modSearchButton as MdEl).disabled = true;
@@ -1707,7 +1867,7 @@ modSearchButton?.addEventListener('click', async () => {
   try {
     const state = await saveProfileEditor(false);
     if (!state) return;
-    const projects = await api.searchModrinth(
+    const projects = await api.modrinthSearchMods(
       state.selectedProfileId,
       ((modSearchInput as MdEl)?.value as string) ?? '',
     );
@@ -1735,14 +1895,29 @@ modSearchResults?.addEventListener('click', async (event) => {
   if (!button?.dataset.project || !profileId) return;
   button.disabled = true;
   try {
-    const project = JSON.parse(button.dataset.project) as ModrinthProject;
-    const state = await api.addMod(profileId, project);
-    renderState(state);
-    renderSelectedMods(
-      state.profiles.find((profile) => profile.id === profileId),
+    const project = JSON.parse(
+      button.dataset.project,
+    ) as ModrinthSearchHit;
+    const versions = await api.modrinthGetVersions(
+      profileId,
+      project.projectId,
     );
+    const version =
+      versions.find((candidate) => candidate.versionType === 'release') ??
+      versions[0];
+    if (!version) {
+      throw new Error(
+        'このMinecraft版とMODローダーに対応するMODバージョンがありません。',
+      );
+    }
+    const result = await api.modrinthDownloadVersion(profileId, version.id);
+    await loadInstalledMods(profileId);
     button.textContent = '追加済み';
-    showToast(`${project.title}をプロファイルへ追加しました。`);
+    showToast(
+      result.alreadyPresent
+        ? `${project.title}は既にインストール済みです。`
+        : `${project.title}をインスタンスのmodsへダウンロードしました。`,
+    );
   } catch (error) {
     button.disabled = false;
     showToast(
@@ -1759,11 +1934,11 @@ selectedModList?.addEventListener('click', async (event) => {
   const profileId = profileIdInput?.value;
   if (!button?.dataset.projectId || !profileId) return;
   try {
-    const state = await api.removeMod(profileId, button.dataset.projectId);
-    renderState(state);
-    renderSelectedMods(
-      state.profiles.find((profile) => profile.id === profileId),
+    await api.modrinthRemoveInstalledMod(
+      profileId,
+      button.dataset.projectId,
     );
+    await loadInstalledMods(profileId);
   } catch (error) {
     showToast(
       error instanceof Error ? error.message : 'MODを削除できませんでした。',
