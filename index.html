@@ -11,6 +11,49 @@
     <title>Mason Launcher</title>
   </head>
   <body>
+    <!--
+      Login screen shown before the launcher when no Microsoft session is
+      active (or when the session/offline cache has expired).
+      Background image: drop your own file at public/login-background.jpg
+      (or .png). Nothing is bundled by default; a gradient is used as fallback.
+    -->
+    <div class="login-screen" id="login-screen" hidden>
+      <img
+        class="login-screen-bg"
+        id="login-screen-bg"
+        src="login-background.jpg"
+        alt=""
+        aria-hidden="true"
+      />
+      <div class="login-screen-scrim" aria-hidden="true"></div>
+      <section class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-screen-title">
+        <div class="brand-mark login-brand" aria-hidden="true">
+          <span></span><span></span><span></span><span></span>
+        </div>
+        <p class="card-kicker">STANDALONE LAUNCHER</p>
+        <h1 id="login-screen-title">Mason Launcher</h1>
+        <p class="login-screen-lead" id="login-screen-status">
+          続行するにはMicrosoftアカウントでログインしてください。
+        </p>
+
+        <md-filled-button id="login-button" type="button" class="microsoft-button login-screen-button">
+          Microsoftアカウントでログイン
+        </md-filled-button>
+
+        <div class="device-code-panel" id="device-code-panel" hidden>
+          <p>ブラウザでMicrosoftにログインし、次のコードを入力してください。</p>
+          <strong id="device-code">--------</strong>
+          <small id="device-code-url">https://microsoft.com/devicelogin</small>
+          <span class="device-code-expiry" id="device-code-expiry"></span>
+          <div class="device-code-actions">
+            <md-outlined-button id="device-code-copy" type="button" hidden>コードをコピー</md-outlined-button>
+            <md-outlined-button id="device-code-open" type="button" hidden>認証ページを開く</md-outlined-button>
+            <md-text-button id="device-code-cancel" type="button" hidden class="cancel-btn">キャンセル</md-text-button>
+          </div>
+        </div>
+      </section>
+    </div>
+
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand-mark" aria-hidden="true">
@@ -115,7 +158,10 @@
             <strong id="profile-name">未ログイン</strong>
             <small id="profile-status">Microsoftアカウントを接続してください</small>
           </div>
-          <md-text-button id="logout-button" hidden>ログアウト</md-text-button>
+          <div class="account-actions">
+            <md-text-button id="settings-login-button" hidden>ログイン</md-text-button>
+            <md-text-button id="logout-button" hidden>ログアウト</md-text-button>
+          </div>
         </div>
 
         <div class="auth-method">
@@ -168,42 +214,18 @@
 
         <p class="settings-caption">Javaランタイム管理</p>
         <div class="settings-section java-runtime-section">
+          <p class="java-runtime-note">
+            必要なJavaは起動時に自動で用意されます（推奨: Eclipse Temurin by Adoptium を自動取得）。
+            システムにインストール済みのJava（Temurin以外を含む）は自動的に検出され、そのまま利用できます。
+          </p>
           <div class="java-runtime-list" id="java-runtime-list" aria-live="polite">
             <p class="java-runtime-empty">Javaを検出しています...</p>
           </div>
-          <div class="java-install-row">
-            <md-filled-select id="java-install-distribution" label="配布元">
-              <md-select-option value="liberica-lite">Liberica Lite</md-select-option>
-              <md-select-option value="liberica">Liberica Standard</md-select-option>
-              <md-select-option value="zulu">Azul Zulu</md-select-option>
-              <md-select-option value="temurin" selected>Eclipse Temurin（推奨）</md-select-option>
-            </md-filled-select>
-            <md-filled-select id="java-install-major" label="Javaバージョン">
-              <md-select-option value="21" selected>Java 21</md-select-option>
-              <md-select-option value="17">Java 17</md-select-option>
-              <md-select-option value="16">Java 16</md-select-option>
-              <md-select-option value="8">Java 8</md-select-option>
-              <md-select-option value="25">Java 25</md-select-option>
-            </md-filled-select>
-            <md-outlined-button id="java-install-button" type="button">インストール</md-outlined-button>
-          </div>
           <div class="dir-action-row">
-            <md-text-button id="java-refresh-button" type="button">再検出</md-text-button>
+            <md-text-button id="java-refresh-button" type="button">システムを再検出</md-text-button>
             <md-text-button id="java-add-custom-button" type="button">手動で追加</md-text-button>
           </div>
           <p id="java-install-status" class="forge-status-text" hidden></p>
-        </div>
-
-        <div class="device-code-panel" id="device-code-panel" hidden>
-          <p>ブラウザでMicrosoftにログインし、次のコードを入力してください。</p>
-          <strong id="device-code">--------</strong>
-          <small id="device-code-url">https://microsoft.com/devicelogin</small>
-          <span class="device-code-expiry" id="device-code-expiry"></span>
-          <div class="device-code-actions">
-            <md-outlined-button id="device-code-copy" type="button" hidden>コードをコピー</md-outlined-button>
-            <md-outlined-button id="device-code-open" type="button" hidden>認証ページを開く</md-outlined-button>
-            <md-text-button id="device-code-cancel" type="button" hidden class="cancel-btn">キャンセル</md-text-button>
-          </div>
         </div>
 
         <section class="developer-log-section">
@@ -219,10 +241,6 @@
           </div>
           <div class="developer-log-list" id="developer-log-list" aria-live="polite"></div>
         </section>
-
-        <md-filled-button id="login-button" type="button" class="microsoft-button">
-          Microsoftアカウントでログイン
-        </md-filled-button>
       </section>
     </div>
 

@@ -5,29 +5,44 @@
 .DESCRIPTION
     Runs: typecheck -> lint -> test -> package/make
     Stops immediately on any failure.
+.PARAMETER Configuration
+    Release : full checks + Squirrel installer under out/make/   (default)
+    Debug   : full checks + expanded build under out/            (faster, no installer)
+    The Configuration selects a sensible default -Target; pass -Target to override.
 .PARAMETER Target
-    make     : generate Squirrel installer under out/make/  (default)
+    make     : generate Squirrel installer under out/make/
     package  : expand build under out/  (faster, no installer)
     check    : typecheck + lint + test only  (no build)
+    Defaults to 'make' for Release and 'package' for Debug.
 .PARAMETER SkipTests
     Skip the test step.
 .PARAMETER SkipLint
     Skip the ESLint step.
 .EXAMPLE
-    .\build.ps1
-    .\build.ps1 -Target package
-    .\build.ps1 -Target check
-    .\build.ps1 -Target make -SkipTests
+    .\build.ps1                              # Release (installer)
+    .\build.ps1 -Configuration Debug         # Debug (expanded build)
+    .\build.ps1 -Configuration Release -SkipTests
+    .\build.ps1 -Target check                # checks only
 #>
 param(
+    [ValidateSet('Release', 'Debug')]
+    [string]$Configuration = 'Release',
     [ValidateSet('make', 'package', 'check')]
-    [string]$Target = 'make',
+    [string]$Target,
     [switch]$SkipTests,
     [switch]$SkipLint
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Configuration drives the default Target unless the caller set one explicitly.
+if (-not $PSBoundParameters.ContainsKey('Target')) {
+    $Target = if ($Configuration -eq 'Debug') { 'package' } else { 'make' }
+}
+
+# Surfaced to electron-forge / vite for any env-dependent behaviour.
+$env:NODE_ENV = if ($Configuration -eq 'Debug') { 'development' } else { 'production' }
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,8 +78,9 @@ function Invoke-Step {
 
 Write-Host ""
 Write-Host "Mason Launcher - Build" -ForegroundColor White
-Write-Host "Target : $Target" -ForegroundColor DarkGray
-Write-Host "Date   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
+Write-Host "Configuration : $Configuration" -ForegroundColor DarkGray
+Write-Host "Target        : $Target" -ForegroundColor DarkGray
+Write-Host "Date          : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 
 $nodeVerRaw = (node --version) 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -77,7 +93,7 @@ if ($nodeMajor -lt 20) {
     Write-Host "ERROR: Node.js 20+ required (found: $nodeVer)" -ForegroundColor Red
     exit 1
 }
-Write-Host "Node   : $nodeVer" -ForegroundColor DarkGray
+Write-Host "Node          : $nodeVer" -ForegroundColor DarkGray
 
 if (-not (Test-Path "node_modules")) {
     Write-Step "npm install"
@@ -140,5 +156,5 @@ elseif ($Target -eq 'package') {
     }
 }
 
-Write-Host "BUILD OK  (${elapsed}s)" -ForegroundColor Green
+Write-Host "BUILD OK  ($Configuration, ${elapsed}s)" -ForegroundColor Green
 Write-Host ""

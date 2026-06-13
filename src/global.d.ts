@@ -309,10 +309,6 @@ declare global {
       }) => Promise<JavaRuntimeInfo[]>;
       addCustomJavaRuntime: () => Promise<JavaRuntimeInfo[] | null>;
       removeJavaRuntime: (runtimeId: string) => Promise<JavaRuntimeInfo[]>;
-      installJavaRuntime: (
-        distribution: JavaDistributionId,
-        major: number,
-      ) => Promise<JavaRuntimeInfo>;
       chooseJavaExecutable: () => Promise<string | null>;
       selectProfile: (profileId: string) => Promise<LauncherState>;
       deleteProfile: (profileId: string) => Promise<LauncherState>;
@@ -382,9 +378,6 @@ declare global {
       ) => () => void;
       onLog: (callback: (payload: LauncherEvent) => void) => () => void;
       onModrinthDownloadProgress: (
-        callback: (payload: LauncherEvent) => void,
-      ) => () => void;
-      onJavaInstallProgress: (
         callback: (payload: LauncherEvent) => void,
       ) => () => void;
     };

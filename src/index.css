@@ -747,6 +747,17 @@ md-tabs {
 .account-summary strong { font-size: 14px; }
 .account-summary small { margin-top: 4px; color: #7e8a78; font-size: 10px; }
 
+.account-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.account-actions md-text-button {
+  white-space: nowrap;
+}
+
 /* Auth method */
 .auth-method {
   display: flex;
@@ -1170,4 +1181,96 @@ md-text-button[data-java-runtime-id] {
   font-size: 0.85rem;
   color: var(--md-sys-color-on-surface-variant);
   user-select: none;
+}
+
+/* ─── Java runtime note ─── */
+.java-runtime-note {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-low);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--md-sys-shape-corner-medium);
+}
+
+/* ─── Login screen (pre-launcher gate) ─── */
+.login-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  overflow: hidden;
+  /* Fallback when no background image is supplied. */
+  background:
+    radial-gradient(circle at 28% 18%, rgb(83 124 51 / 28%), transparent 38rem),
+    radial-gradient(circle at 82% 96%, rgb(40 70 24 / 32%), transparent 40rem),
+    #0a0e0a;
+}
+
+.login-screen[hidden] { display: none; }
+
+/* Hide the launcher behind the login gate so nothing leaks through. */
+body.login-active .app-shell { visibility: hidden; }
+
+.login-screen-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* The image element is removed by JS if the file is missing. */
+}
+
+.login-screen-scrim {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgb(5 8 5 / 55%), rgb(5 8 5 / 86%));
+  backdrop-filter: blur(2px);
+}
+
+.login-card {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  padding: 40px 34px;
+  border: 1px solid #43523e;
+  border-radius: 12px;
+  background: rgb(17 23 16 / 92%);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 55%);
+}
+
+.login-card h1 {
+  margin: 0;
+  font-size: 1.7rem;
+  letter-spacing: 0.01em;
+}
+
+.login-brand { margin-bottom: 4px; }
+
+.login-screen-lead {
+  margin: 0;
+  max-width: 30ch;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--md-sys-color-on-surface-variant);
+}
+
+.login-screen-button {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.login-card .device-code-panel {
+  width: 100%;
+  margin-top: 8px;
 }

@@ -20,7 +20,6 @@ import { LauncherDiagnostics } from './diagnostics';
 import {
   JavaRuntimeService,
   normalizeJavaSettings,
-  type JavaDistributionId,
   type ProfileJavaSettings,
 } from './java-runtime-service';
 import {
@@ -1213,27 +1212,6 @@ const registerIpcHandlers = () => {
     }
     return javaRuntimeService.removeRuntime(runtimeId.trim());
   });
-
-  trustedIpc.handle(
-    'java:install-runtime',
-    async (event, distribution: unknown, major: unknown) => {
-      if (typeof distribution !== 'string' || typeof major !== 'number') {
-        throw new Error('Javaインストール指定が不正です。');
-      }
-      if (launchWorkflowInProgress || minecraftService.isRunning()) {
-        throw new Error('Minecraft の起動処理中はJavaをインストールできません。');
-      }
-      return javaRuntimeService.installRuntime(
-        distribution as JavaDistributionId,
-        Math.round(major),
-        (progress) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('java:install-progress', progress);
-          }
-        },
-      );
-    },
-  );
 
   trustedIpc.handle('java:choose-executable', async () => {
     const result = await dialog.showOpenDialog({

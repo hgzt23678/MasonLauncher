@@ -469,19 +469,7 @@ const api = window.launcher ?? {
   ],
   addCustomJavaRuntime: async () => null,
   removeJavaRuntime: async (): Promise<JavaRuntimeInfo[]> => [],
-  installJavaRuntime: async (): Promise<JavaRuntimeInfo> => ({
-    id: 'managed:demo',
-    source: 'managed',
-    distribution: 'liberica-lite',
-    majorVersion: 21,
-    versionString: 'openjdk version "21.0.3"',
-    arch: 'amd64',
-    path: 'C:\\demo\\java.exe',
-    verified: true,
-    verifiedAt: new Date().toISOString(),
-  }),
   chooseJavaExecutable: async () => null,
-  onJavaInstallProgress: () => () => undefined,
   modrinthSearchMods: async (): Promise<ModrinthSearchHit[]> => [
     {
       projectId: 'demo-project',
@@ -600,6 +588,11 @@ const profilesNav = byId<HTMLElement>('profiles-nav');
 const accountButton = byId<HTMLElement>('account-button');
 const accountAvatar = byId<HTMLElement>('account-avatar');
 const accountLabel = byId<HTMLElement>('account-label');
+
+// Login screen (shown before the launcher when signed out / session expired)
+const loginScreen = byId<HTMLElement>('login-screen');
+const loginScreenBg = byId<HTMLImageElement>('login-screen-bg');
+const loginScreenStatus = byId<HTMLElement>('login-screen-status');
 const profileGrid = byId<HTMLElement>('profile-grid');
 const profilesSection = byId<HTMLElement>('profiles-section');
 const addProfileButton = byId<HTMLElement>('add-profile-button');
@@ -620,6 +613,7 @@ const profileAvatar = byId<HTMLElement>('profile-avatar');
 const profileName = byId<HTMLElement>('profile-name');
 const profileStatus = byId<HTMLElement>('profile-status');
 const logoutButton = byId<HTMLElement>('logout-button');
+const settingsLoginButton = byId<HTMLElement>('settings-login-button');
 const minMemoryInput = byId<HTMLElement>('min-memory-input');
 const maxMemoryInput = byId<HTMLElement>('max-memory-input');
 const saveSettingsButton = byId<HTMLElement>('save-settings-button');
@@ -669,9 +663,6 @@ const saveProfileButton = byId<HTMLElement>('save-profile-button');
 
 // Java runtime management (settings modal)
 const javaRuntimeList = byId<HTMLElement>('java-runtime-list');
-const javaInstallDistribution = byId<HTMLElement>('java-install-distribution');
-const javaInstallMajor = byId<HTMLElement>('java-install-major');
-const javaInstallButton = byId<HTMLElement>('java-install-button');
 const javaRefreshButton = byId<HTMLElement>('java-refresh-button');
 const javaAddCustomButton = byId<HTMLElement>('java-add-custom-button');
 const javaInstallStatus = byId<HTMLElement>('java-install-status');
@@ -802,6 +793,31 @@ const selectedProfile = () =>
     (profile) => profile.id === currentState?.selectedProfileId,
   );
 
+// A signed-in Microsoft session OR a valid offline cache lets the user reach
+// the launcher; otherwise the login screen blocks access. Builds without a
+// configured Client ID cannot log in at all, so they bypass the gate (login
+// stays optional, matching the documented "auth disabled" build).
+const hasLauncherAccess = (auth: AuthState) =>
+  auth.signedIn || auth.offline.allowed || !auth.configured;
+
+const showLoginScreen = () => {
+  loginScreen?.removeAttribute('hidden');
+  document.body.classList.add('login-active');
+};
+
+const hideLoginScreen = () => {
+  loginScreen?.setAttribute('hidden', '');
+  document.body.classList.remove('login-active');
+};
+
+const syncLoginScreen = (auth: AuthState) => {
+  if (hasLauncherAccess(auth)) {
+    hideLoginScreen();
+  } else {
+    showLoginScreen();
+  }
+};
+
 const renderAuth = (auth: AuthState) => {
   const name = auth.profile?.name ?? '未ログイン';
   const initial = name.slice(0, 1) || '?';
@@ -829,6 +845,14 @@ const renderAuth = (auth: AuthState) => {
   if (logoutButton) {
     logoutButton.hidden = !auth.signedIn && !auth.offline.allowed;
   }
+  // Settings re-login link: only useful for going online from an offline cache.
+  if (settingsLoginButton) {
+    settingsLoginButton.hidden = !(
+      auth.configured &&
+      !auth.signedIn &&
+      auth.offline.allowed
+    );
+  }
   if (loginButton) {
     loginButton.hidden = auth.signedIn;
     (loginButton as MdEl).disabled = !auth.configured;
@@ -836,6 +860,12 @@ const renderAuth = (auth: AuthState) => {
       ? 'Microsoftアカウントでログイン'
       : 'Microsoft認証が未設定です';
   }
+  if (loginScreenStatus) {
+    loginScreenStatus.textContent = auth.configured
+      ? '続行するにはMicrosoftアカウントでログインしてください。'
+      : 'このビルドにはMicrosoft認証設定が含まれていません。.env に MICROSOFT_CLIENT_ID を設定して再ビルドしてください。';
+  }
+  syncLoginScreen(auth);
 };
 
 const createProfileCard = (profile: LaunchProfile) => {
@@ -1394,10 +1424,7 @@ const populateProfileJavaSelect = (java: ProfileJavaSettings) => {
     profileJavaSelect.append(option);
     return option;
   };
-  appendOption('auto', '自動（推奨: Eclipse Temurin）');
-  appendOption('auto:liberica-lite', '自動 / Liberica Lite');
-  appendOption('auto:liberica', '自動 / Liberica Standard');
-  appendOption('auto:zulu', '自動 / Azul Zulu');
+  appendOption('auto', '自動（推奨: Eclipse Temurin by Adoptium）');
   for (const runtime of javaRuntimes) {
     if (runtime.source === 'mojang' || !runtime.verified) continue;
     appendOption(
@@ -2192,6 +2219,12 @@ loginButton?.addEventListener('click', async () => {
   }
 });
 
+// From the settings panel (offline mode), jump back to the login screen.
+settingsLoginButton?.addEventListener('click', () => {
+  closeSettingsModal();
+  showLoginScreen();
+});
+
 logoutButton?.addEventListener('click', async () => {
   try {
     const auth = await api.logout();
@@ -2294,30 +2327,6 @@ javaAddCustomButton?.addEventListener('click', async () => {
   }
 });
 
-javaInstallButton?.addEventListener('click', async () => {
-  const distribution = String(
-    (javaInstallDistribution as MdEl)?.value ?? 'temurin',
-  ) as JavaDistributionId;
-  const major = Number((javaInstallMajor as MdEl)?.value ?? 21);
-  (javaInstallButton as MdEl).disabled = true;
-  setJavaInstallStatus('インストールを開始しています...');
-  try {
-    await api.installJavaRuntime(distribution, major);
-    await loadJavaRuntimes();
-    setJavaInstallStatus('');
-    showToast('Javaランタイムをインストールしました。');
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'Javaをインストールできませんでした。';
-    setJavaInstallStatus(message);
-    showToast(message, true);
-  } finally {
-    (javaInstallButton as MdEl).disabled = false;
-  }
-});
-
 javaRuntimeList?.addEventListener('click', async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
     '[data-java-runtime-id]',
@@ -2336,13 +2345,6 @@ javaRuntimeList?.addEventListener('click', async (event) => {
       true,
     );
   }
-});
-
-api.onJavaInstallProgress((payload) => {
-  const message =
-    typeof payload.message === 'string' ? payload.message : '処理中...';
-  const percent = typeof payload.percent === 'number' ? payload.percent : 0;
-  setJavaInstallStatus(`${message} (${percent}%)`);
 });
 
 profileJavaSelect?.addEventListener('change', async () => {
@@ -2451,5 +2453,16 @@ api.onProcessState((payload) => {
     );
   }
 });
+
+// No background image bundled by default: if the user has not dropped one at
+// public/login-background.jpg, hide the <img> so the CSS gradient shows.
+if (loginScreenBg) {
+  loginScreenBg.addEventListener('error', () => {
+    loginScreenBg.style.display = 'none';
+  });
+  if (loginScreenBg.complete && loginScreenBg.naturalWidth === 0) {
+    loginScreenBg.style.display = 'none';
+  }
+}
 
 void refreshState();

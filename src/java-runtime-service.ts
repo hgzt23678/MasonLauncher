@@ -46,8 +46,15 @@ export const knownDistributions = [
 
 export type JavaDistributionId = (typeof knownDistributions)[number];
 
+/**
+ * The only distribution the launcher will download/install on its own. Every
+ * other distribution is supported strictly through system detection. New
+ * profiles therefore default to Eclipse Temurin (by Adoptium).
+ */
+export const recommendedJavaDistribution: JavaDistributionId = 'temurin';
+
 export const defaultPreferredDistributions: JavaDistributionId[] = [
-  'temurin',
+  recommendedJavaDistribution,
   'liberica-lite',
   'liberica',
   'zulu',
@@ -1791,35 +1798,36 @@ export class JavaRuntimeService {
     }
 
     if (!input.offlineOnly) {
-      for (const distribution of preferred) {
-        try {
-          const installed = await this.installRuntime(
-            distribution,
-            requiredMajor,
-            input.onProgress,
-          );
-          const selection: ResolvedJavaSelection = {
-            javaPath: installed.path,
-            majorVersion: installed.majorVersion,
-            distribution: installed.distribution,
-            runtimeId: installed.id,
-            source: 'managed',
+      // Only the recommended distribution (Eclipse Temurin by Adoptium) is
+      // auto-installed. Every other distribution is used solely when it is
+      // already detected on the system, never downloaded by the launcher.
+      try {
+        const installed = await this.installRuntime(
+          recommendedJavaDistribution,
+          requiredMajor,
+          input.onProgress,
+        );
+        const selection: ResolvedJavaSelection = {
+          javaPath: installed.path,
+          majorVersion: installed.majorVersion,
+          distribution: installed.distribution,
+          runtimeId: installed.id,
+          source: 'managed',
+          requiredMajorVersion: requiredMajor,
+        };
+        this.logSelection(selection, input.instanceId, 'auto');
+        return selection;
+      } catch (error) {
+        this.log(
+          'warn',
+          'java',
+          '推奨Java（Eclipse Temurin）の自動インストールに失敗しました。検出済みランタイムを探します。',
+          {
+            distribution: recommendedJavaDistribution,
             requiredMajorVersion: requiredMajor,
-          };
-          this.logSelection(selection, input.instanceId, 'auto');
-          return selection;
-        } catch (error) {
-          this.log(
-            'warn',
-            'java',
-            'Javaランタイムの自動インストールに失敗したため次の配布元を試します。',
-            {
-              distribution,
-              requiredMajorVersion: requiredMajor,
-              message: error instanceof Error ? error.message : String(error),
-            },
-          );
-        }
+            message: error instanceof Error ? error.message : String(error),
+          },
+        );
       }
     }
 
