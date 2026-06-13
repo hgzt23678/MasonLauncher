@@ -375,6 +375,8 @@ const api = window.launcher ?? {
   openDirectory: demoAction,
   openInstanceFolder: demoAction,
   openInstanceLogs: demoAction,
+  openLatestLog: demoAction,
+  copyReproductionScript: demoAction,
   saveSettings: async (settings: Record<string, unknown>) => {
     if (typeof settings.minMemory === 'number') {
       demoState.settings.minMemory = settings.minMemory;
@@ -846,7 +848,49 @@ const createProfileCard = (profile: LaunchProfile) => {
   logsSvg.innerHTML = '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm-1 1.5L18.5 9H13V3.5zM8 13h8v2H8v-2zm0-4h5v2H8V9zm0 8h8v2H8v-2z"/>';
   logsBtn.append(logsSvg);
 
-  actions.append(playBtn, editBtn, folderBtn, logsBtn);
+  const latestLogBtn = document.createElement('md-icon-button') as HTMLElement;
+  latestLogBtn.dataset.action = 'open-latest-log';
+  latestLogBtn.setAttribute('type', 'button');
+  latestLogBtn.setAttribute('aria-label', 'latest.logを開く');
+  const latestLogSvg = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'svg',
+  );
+  latestLogSvg.setAttribute('viewBox', '0 0 24 24');
+  latestLogSvg.setAttribute('width', '20');
+  latestLogSvg.setAttribute('height', '20');
+  latestLogSvg.setAttribute('fill', 'currentColor');
+  latestLogSvg.innerHTML =
+    '<path d="M4 4h16v16H4V4zm3 4v2h10V8H7zm0 4v2h10v-2H7zm0 4v2h7v-2H7z"/>';
+  latestLogBtn.append(latestLogSvg);
+
+  const reproBtn = document.createElement('md-icon-button') as HTMLElement;
+  reproBtn.dataset.action = 'copy-repro';
+  reproBtn.setAttribute('type', 'button');
+  reproBtn.setAttribute(
+    'aria-label',
+    'PowerShell再現スクリプトをコピー',
+  );
+  const reproSvg = document.createElementNS(
+    'http://www.w3.org/2000/svg',
+    'svg',
+  );
+  reproSvg.setAttribute('viewBox', '0 0 24 24');
+  reproSvg.setAttribute('width', '20');
+  reproSvg.setAttribute('height', '20');
+  reproSvg.setAttribute('fill', 'currentColor');
+  reproSvg.innerHTML =
+    '<path d="M4 4h16v16H4V4zm3 4 3 3-3 3 1.4 1.4L12.8 11 8.4 6.6 7 8zm6 7h4v-2h-4v2z"/>';
+  reproBtn.append(reproSvg);
+
+  actions.append(
+    playBtn,
+    editBtn,
+    folderBtn,
+    logsBtn,
+    latestLogBtn,
+    reproBtn,
+  );
   card.append(art, body, actions);
   return card;
 };
@@ -1546,6 +1590,32 @@ profileGrid?.addEventListener('click', async (event) => {
       showToast(result.message, !result.ok);
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'ログフォルダを開けませんでした。', true);
+    }
+    return;
+  }
+  if (button.dataset.action === 'open-latest-log') {
+    try {
+      const result = await api.openLatestLog(profile.id);
+      showToast(result.message, !result.ok);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'latest.logを開けませんでした。',
+        true,
+      );
+    }
+    return;
+  }
+  if (button.dataset.action === 'copy-repro') {
+    try {
+      const result = await api.copyReproductionScript(profile.id);
+      showToast(result.message, !result.ok);
+    } catch (error) {
+      showToast(
+        error instanceof Error
+          ? error.message
+          : 'PowerShell再現スクリプトをコピーできませんでした。',
+        true,
+      );
     }
     return;
   }

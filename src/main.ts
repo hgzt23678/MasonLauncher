@@ -2,7 +2,14 @@ import { promises as fs } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  ipcMain,
+  shell,
+} from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import started from 'electron-squirrel-startup';
 import { Version } from '@xmcl/core';
@@ -927,6 +934,63 @@ const registerIpcHandlers = () => {
     return error
       ? { ok: false, message: error }
       : { ok: true, message: 'ログフォルダを開きました。' };
+  });
+
+  trustedIpc.handle('launcher:open-latest-log', async (_event, profileId: unknown) => {
+    if (typeof profileId !== 'string') {
+      throw new Error('プロファイル指定が不正です。');
+    }
+    const settings = await readSettings();
+    const profile = findProfileOrThrow(settings, profileId);
+    const instanceDir = await resolveInstanceDirectory(profile);
+    const latestLog = path.join(instanceDir, 'logs', 'latest.log');
+    if (!(await pathExists(latestLog))) {
+      return { ok: false, message: 'latest.logはまだ作成されていません。' };
+    }
+    const error = await shell.openPath(latestLog);
+    return error
+      ? { ok: false, message: error }
+      : { ok: true, message: 'latest.logを開きました。' };
+  });
+
+  trustedIpc.handle('launcher:copy-reproduction-script', async (_event, profileId: unknown) => {
+    if (typeof profileId !== 'string') {
+      throw new Error('プロファイル指定が不正です。');
+    }
+    const settings = await readSettings();
+    const profile = findProfileOrThrow(settings, profileId);
+    await resolveInstanceDirectory(profile);
+    const logsDir = await ensureLauncherLogsDirectory(
+      managedInstancesRoot(),
+      profile.id,
+    );
+    const scripts = (await fs.readdir(logsDir, { withFileTypes: true }))
+      .filter(
+        (entry) =>
+          entry.isFile() &&
+          entry.name.endsWith('.log.repro.ps1'),
+      )
+      .map((entry) => path.join(logsDir, entry.name));
+    const newest = (
+      await Promise.all(
+        scripts.map(async (scriptPath) => ({
+          scriptPath,
+          modifiedAt: (await fs.stat(scriptPath)).mtimeMs,
+        })),
+      )
+    ).sort((left, right) => right.modifiedAt - left.modifiedAt)[0];
+    if (!newest) {
+      return {
+        ok: false,
+        message: 'PowerShell再現スクリプトはまだ生成されていません。',
+      };
+    }
+    clipboard.writeText(await fs.readFile(newest.scriptPath, 'utf8'));
+    return {
+      ok: true,
+      message:
+        'PowerShell再現スクリプトをコピーしました。アクセストークンは含まれていません。',
+    };
   });
 
   trustedIpc.handle('launcher:save-settings', async (_event, input: unknown) => {

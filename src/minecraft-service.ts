@@ -751,12 +751,13 @@ export class MinecraftService {
       this.report(sender, {
         phase: 'spawn',
         percent: 100,
-        message: `${versionId} を起動しました`,
+        message: `${versionId} のJavaプロセスを起動しました（画面表示は未確認）`,
       });
       return {
         ok: true,
         pid: processHandle.pid,
-        message: 'Minecraftを起動しました。',
+        message:
+          'Minecraft Javaプロセスを起動しました。画面表示を確認しています。',
       };
     } catch (error) {
       const failure = toMinecraftError(

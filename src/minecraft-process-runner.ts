@@ -94,14 +94,21 @@ const clientInitPatterns = [
   ' Preparing level ',
 ];
 
-const appendRingLine = (lines: string[], line: string, limit = 100) => {
+const mainClassPatterns = [
+  'Launching wrapped minecraft',
+  'Setting user:',
+  'LWJGL Version:',
+  'Backend library:',
+];
+
+const appendRingLine = (lines: string[], line: string, limit = 200) => {
   lines.push(sanitizeLogText(line));
   if (lines.length > limit) {
     lines.splice(0, lines.length - limit);
   }
 };
 
-const readLogTail = async (target: string, lineLimit = 50) => {
+const readLogTail = async (target: string, lineLimit = 100) => {
   try {
     const handle = await fs.open(target, 'r');
     try {
@@ -121,6 +128,52 @@ const readLogTail = async (target: string, lineLimit = 50) => {
   } catch {
     return [];
   }
+};
+
+const quotePowerShellLiteral = (value: string) =>
+  `'${value.replaceAll("'", "''")}'`;
+
+export const buildPowerShellReproductionScript = (
+  command: string,
+  args: readonly string[],
+  cwd: string,
+) => {
+  let redactNext = false;
+  let requiresSecret = false;
+  const argumentLines = args.map((argument) => {
+    if (redactNext) {
+      redactNext = false;
+      return '  $env:MASON_MC_ACCESS_TOKEN';
+    }
+    if (/^--?(?:access[-_]?token|auth[-_]?access[-_]?token|session)$/i.test(argument)) {
+      redactNext = true;
+      requiresSecret = true;
+    }
+    return `  ${quotePowerShellLiteral(sanitizeLogText(argument))}`;
+  });
+  return [
+    "$ErrorActionPreference = 'Stop'",
+    ...(requiresSecret
+      ? [
+          "if (-not $env:MASON_MC_ACCESS_TOKEN) {",
+          "  throw 'Set MASON_MC_ACCESS_TOKEN for the current authenticated session before running this script.'",
+          '}',
+        ]
+      : []),
+    `$java = ${quotePowerShellLiteral(command)}`,
+    `$workingDirectory = ${quotePowerShellLiteral(cwd)}`,
+    '$arguments = @(',
+    ...argumentLines,
+    ')',
+    'Push-Location -LiteralPath $workingDirectory',
+    'try {',
+    '  & $java @arguments',
+    '  exit $LASTEXITCODE',
+    '} finally {',
+    '  Pop-Location',
+    '}',
+    '',
+  ].join('\r\n');
 };
 
 const spawnFailure = (error: unknown, command: string) => {
@@ -229,6 +282,29 @@ export class MinecraftProcessRunner {
           .map(quoteForLog)
           .join(' '),
       });
+      const reproductionScriptPath =
+        `${request.metadata.launcherLogPath}.repro.ps1`;
+      void fs
+        .writeFile(
+          reproductionScriptPath,
+          buildPowerShellReproductionScript(
+            validated.command,
+            validated.args,
+            request.cwd,
+          ),
+          'utf8',
+        )
+        .catch((error: unknown) => {
+          this.log(
+            'warn',
+            'process',
+            'PowerShell再現用スクリプトを保存できませんでした。',
+            {
+              path: reproductionScriptPath,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          );
+        });
     }
     this.log('info', 'spawn', 'Javaプロセスを起動します。', {
       command: validated.command,
@@ -259,6 +335,7 @@ export class MinecraftProcessRunner {
 
     const stdoutTail: string[] = [];
     const stderrTail: string[] = [];
+    let mainClassOutputSeen = false;
     let clientInitLogSeen = false;
     let clientInitTriggerLine: string | undefined;
     let windowConfirmed = false;
@@ -266,6 +343,9 @@ export class MinecraftProcessRunner {
     let confirmedWindow: WindowProbeCandidate | undefined;
     let stopped = false;
     let probeTimer: NodeJS.Timeout | undefined;
+    let latestLogTimer: NodeJS.Timeout | undefined;
+    let latestLogSeen = false;
+    let windowCandidateSeen = false;
     const spawnedAt = this.now();
 
     const forward = (
@@ -282,6 +362,25 @@ export class MinecraftProcessRunner {
         appendRingLine(stream === 'stdout' ? stdoutTail : stderrTail, line);
         this.log(level, 'process', line, { stream });
         writeLaunchLog(stream, { message: line });
+        if (
+          stream === 'stdout' &&
+          !mainClassOutputSeen &&
+          mainClassPatterns.some((pattern) => line.includes(pattern))
+        ) {
+          mainClassOutputSeen = true;
+          writeLaunchLog('main-class-output', {
+            pid: processHandle.pid ?? null,
+            mainClass: request.metadata?.mainClass ?? null,
+            triggerLine: sanitizeLogText(line),
+            detectedAt: new Date(this.now()).toISOString(),
+            elapsedMs: this.now() - spawnedAt,
+          });
+          callbacks.onState({
+            running: true,
+            pid: processHandle.pid,
+            message: 'Minecraft mainClassの実行ログを確認しました。',
+          });
+        }
         if (
           stream === 'stdout' &&
           !clientInitLogSeen &&
@@ -327,6 +426,41 @@ export class MinecraftProcessRunner {
         clearTimeout(probeTimer);
         probeTimer = undefined;
       }
+      if (latestLogTimer) {
+        clearTimeout(latestLogTimer);
+        latestLogTimer = undefined;
+      }
+    };
+    const pollForLatestLog = async (): Promise<void> => {
+      const latestLogPath = request.metadata?.latestLogPath;
+      if (stopped || latestLogSeen || !latestLogPath) return;
+      try {
+        const stat = await fs.stat(latestLogPath);
+        if (
+          stat.isFile() &&
+          stat.size > 0 &&
+          stat.mtimeMs >= spawnedAt - 1_000
+        ) {
+          latestLogSeen = true;
+          writeLaunchLog('latest-log-detected', {
+            path: latestLogPath,
+            size: stat.size,
+            modifiedAt: stat.mtime.toISOString(),
+            elapsedMs: this.now() - spawnedAt,
+          });
+          callbacks.onState({
+            running: true,
+            pid: processHandle.pid,
+            message: 'Minecraft latest.logの更新を確認しました。',
+          });
+          return;
+        }
+      } catch {
+        // The game creates latest.log after the logging subsystem starts.
+      }
+      if (this.now() - spawnedAt < 60_000) {
+        latestLogTimer = setTimeout(() => void pollForLatestLog(), 500);
+      }
     };
     const pollForWindow = async (): Promise<void> => {
       const pid = processHandle.pid;
@@ -338,6 +472,15 @@ export class MinecraftProcessRunner {
         ...result,
         confirmed: Boolean(candidate),
       });
+      if (!windowCandidateSeen && result.candidates.length > 0) {
+        windowCandidateSeen = true;
+        callbacks.onState({
+          running: true,
+          pid,
+          message:
+            'Minecraftウィンドウ候補を検出しました（表示条件を確認中）。',
+        });
+      }
       if (candidate) {
         windowConfirmed = true;
         windowConfirmedAt = this.now();
@@ -350,7 +493,7 @@ export class MinecraftProcessRunner {
         callbacks.onState({
           running: true,
           pid,
-          message: 'Minecraft画面を確認しました。',
+          message: 'Minecraft画面を確認しました。プレイ中です。',
         });
         return;
       }
@@ -366,6 +509,7 @@ export class MinecraftProcessRunner {
     };
     if (request.metadata && processHandle.pid) {
       void pollForWindow();
+      void pollForLatestLog();
     }
 
     const watcher = createMinecraftProcessWatcher(processHandle);
@@ -377,112 +521,142 @@ export class MinecraftProcessRunner {
         triggerLine: clientInitTriggerLine ?? null,
       });
     });
-    watcher.on(
-      'minecraft-exit',
-      async ({ code, signal, crashReportLocation }) => {
-        stopWindowProbe();
-        this.processHandle = undefined;
-        const elapsed = this.now() - spawnedAt;
-        const abnormalCode = code !== 0 && code !== null;
-        const killedBySignal = code === null && signal != null;
-        const windowUnverified = !windowConfirmed;
-        const shortLivedConfirmedWindow =
-          windowConfirmedAt !== undefined &&
-          this.now() - windowConfirmedAt < 3_000;
-        const crashed =
-          abnormalCode ||
-          killedBySignal ||
-          shortLivedConfirmedWindow ||
-          (windowUnverified && !clientInitLogSeen);
-        const category: MinecraftErrorCategory | undefined = crashed
-          ? 'crash'
-          : windowUnverified
-            ? 'window-unverified'
-            : undefined;
-        const latestLogPath = request.metadata?.latestLogPath;
-        const latestLog = latestLogPath
-          ? await fs.stat(latestLogPath).then(
-              (stat) => ({
-                path: latestLogPath,
-                exists: stat.isFile(),
-                size: stat.size,
-                modifiedAt: stat.mtime.toISOString(),
-              }),
-              () => ({ path: latestLogPath, exists: false, size: 0 }),
-            )
+    let settled = false;
+    const finalizeExit = async (
+      code: number | null,
+      signal: NodeJS.Signals | null,
+      crashReportLocation: string | undefined,
+      source: 'xmcl-watcher' | 'child-exit' | 'child-close',
+    ) => {
+      if (settled) return;
+      settled = true;
+      stopWindowProbe();
+      this.processHandle = undefined;
+      const elapsed = this.now() - spawnedAt;
+      const abnormalCode = code !== 0 && code !== null;
+      const killedBySignal = code === null && signal != null;
+      const windowUnverified = !windowConfirmed;
+      const shortLivedConfirmedWindow =
+        windowConfirmedAt !== undefined &&
+        this.now() - windowConfirmedAt < 3_000;
+      const crashed =
+        abnormalCode ||
+        killedBySignal ||
+        shortLivedConfirmedWindow ||
+        (windowUnverified && !clientInitLogSeen);
+      const category: MinecraftErrorCategory | undefined = crashed
+        ? 'crash'
+        : windowUnverified
+          ? 'window-unverified'
           : undefined;
-        const latestLogTail = latestLogPath
-          ? await readLogTail(latestLogPath)
-          : [];
-        const logMessage = abnormalCode
-          ? `Minecraftが異常終了しました（コード ${code}）。`
-          : killedBySignal
-            ? `Minecraftがシグナル ${signal} で終了しました。`
-            : shortLivedConfirmedWindow
-              ? 'Minecraft画面を確認しましたが、直後にプロセスが終了しました。起動失敗として扱います。'
-            : windowUnverified
-              ? clientInitLogSeen
-                ? 'Minecraftクライアントは初期化されましたが、画面表示を確認できないまま終了しました。正常起動として扱いません。'
-                : 'Minecraftが画面を表示せずに終了しました。正常起動ではない可能性が高いため、起動失敗として扱います。'
-              : 'Minecraftが正常終了しました。';
-        writeLaunchLog('exit', {
-          pid: processHandle.pid ?? null,
-          endedAt: new Date(this.now()).toISOString(),
-          exitCode: code,
-          signal: signal || null,
-          elapsedMs: elapsed,
-          clientInitLogSeen,
-          clientInitTriggerLine: clientInitTriggerLine ?? null,
-          windowConfirmed,
-          windowConfirmedAt:
-            windowConfirmedAt === undefined
-              ? null
-              : new Date(windowConfirmedAt).toISOString(),
-          shortLivedConfirmedWindow,
-          confirmedWindow: confirmedWindow ?? null,
-          crashReportLocation: crashReportLocation || null,
-          latestLog,
-          latestLogTail,
-          stdoutTail,
-          stderrTail,
-        });
-        launchLog?.end();
-        this.log(
-          crashed ? 'error' : windowUnverified ? 'warn' : 'info',
-          'process',
-          logMessage,
-          {
-            pid: processHandle.pid ?? null,
-            exitCode: code,
-            signal: signal || null,
-            crashReportLocation: crashReportLocation || null,
-            elapsedMs: elapsed,
-            clientInitLogSeen,
-            clientInitTriggerLine: clientInitTriggerLine ?? null,
-            windowConfirmed,
-            windowConfirmedAt:
-              windowConfirmedAt === undefined
-                ? null
-                : new Date(windowConfirmedAt).toISOString(),
-            shortLivedConfirmedWindow,
-            confirmedWindow: confirmedWindow ?? null,
-            latestLog,
-            latestLogTail,
-            stdoutTail,
-            stderrTail,
-          },
-        );
-        callbacks.onState({
-          running: false,
+      const latestLogPath = request.metadata?.latestLogPath;
+      const latestLog = latestLogPath
+        ? await fs.stat(latestLogPath).then(
+            (stat) => ({
+              path: latestLogPath,
+              exists: stat.isFile(),
+              size: stat.size,
+              modifiedAt: stat.mtime.toISOString(),
+            }),
+            () => ({ path: latestLogPath, exists: false, size: 0 }),
+          )
+        : undefined;
+      const latestLogTail = latestLogPath
+        ? await readLogTail(latestLogPath)
+        : [];
+      const logMessage = abnormalCode
+        ? `Minecraftが異常終了しました（コード ${code}）。`
+        : killedBySignal
+          ? `Minecraftがシグナル ${signal} で終了しました。`
+          : shortLivedConfirmedWindow
+            ? 'Minecraft画面を確認しましたが、直後にプロセスが終了しました。起動失敗として扱います。'
+          : windowUnverified
+            ? clientInitLogSeen
+              ? 'Minecraftクライアントは初期化されましたが、画面表示を確認できないまま終了しました。正常起動として扱いません。'
+              : 'Minecraftが画面を表示せずに終了しました。正常起動ではない可能性が高いため、起動失敗として扱います。'
+            : 'Minecraftが正常終了しました。';
+      const exitDetail = {
+        pid: processHandle.pid ?? null,
+        source,
+        endedAt: new Date(this.now()).toISOString(),
+        exitCode: code,
+        signal: signal || null,
+        elapsedMs: elapsed,
+        mainClassOutputSeen,
+        latestLogSeen,
+        clientInitLogSeen,
+        clientInitTriggerLine: clientInitTriggerLine ?? null,
+        windowCandidateSeen,
+        windowConfirmed,
+        windowConfirmedAt:
+          windowConfirmedAt === undefined
+            ? null
+            : new Date(windowConfirmedAt).toISOString(),
+        shortLivedConfirmedWindow,
+        confirmedWindow: confirmedWindow ?? null,
+        crashReportLocation: crashReportLocation || null,
+        latestLog,
+        latestLogTail,
+        stdoutTail,
+        stderrTail,
+      };
+      if (launchLog) {
+        const exitRecord = `${JSON.stringify({
+          timestamp: new Date(this.now()).toISOString(),
+          event: 'exit',
+          ...sanitizeDetail(exitDetail),
+        })}\n`;
+        try {
+          await new Promise<void>((resolve, reject) => {
+            launchLog?.write(exitRecord, (error) => {
+              if (error) reject(error);
+              else resolve();
+            });
+          });
+          await new Promise<void>((resolve) => launchLog?.end(resolve));
+        } catch (error) {
+          this.log(
+            'warn',
+            'process',
+            '終了診断をインスタンス起動ログへ保存できませんでした。',
+            {
+              launcherLogPath: request.metadata?.launcherLogPath,
+              message: error instanceof Error ? error.message : String(error),
+            },
+          );
+          launchLog.destroy();
+        }
+      }
+      this.log(
+        crashed ? 'error' : windowUnverified ? 'warn' : 'info',
+        'process',
+        logMessage,
+        exitDetail,
+      );
+      callbacks.onState({
+        running: false,
+        code,
+        signal: signal || null,
+        category,
+        message: category ? logMessage : 'Minecraftを終了しました。',
+        crashReportLocation,
+      });
+    };
+    let xmclCrashReportLocation: string | undefined;
+    watcher.on('minecraft-exit', ({ code, signal, crashReportLocation }) => {
+      xmclCrashReportLocation = crashReportLocation;
+      queueMicrotask(() => {
+        void finalizeExit(
           code,
-          signal: signal || null,
-          category,
-          message: category ? logMessage : 'Minecraftを終了しました。',
+          signal as NodeJS.Signals | null,
           crashReportLocation,
-        });
-      },
-    );
-    watcher.on('error', (error) => {
+          'xmcl-watcher',
+        );
+      });
+    });
+    const handleProcessError = (error: Error) => {
+      if (settled) return;
+      settled = true;
       stopWindowProbe();
       this.processHandle = undefined;
       const failure = spawnFailure(error, validated.command);
@@ -500,6 +674,24 @@ export class MinecraftProcessRunner {
         category: failure.category,
         message: failure.message,
       });
+    };
+    watcher.on('error', handleProcessError);
+    processHandle.once('error', handleProcessError);
+    processHandle.once('exit', (code, signal) => {
+      void finalizeExit(
+        code,
+        signal,
+        xmclCrashReportLocation,
+        'child-exit',
+      );
+    });
+    processHandle.once('close', (code, signal) => {
+      void finalizeExit(
+        code,
+        signal,
+        xmclCrashReportLocation,
+        'child-close',
+      );
     });
 
     this.log('info', 'spawn', 'Javaプロセスを起動しました。', {

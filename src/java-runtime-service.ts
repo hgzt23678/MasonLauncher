@@ -1,10 +1,19 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { promises as fs } from 'node:fs';
-import os from 'node:os';
+import {
+  createReadStream,
+  createWriteStream,
+  promises as fs,
+} from 'node:fs';
 import path from 'node:path';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { promisify } from 'node:util';
-import { open, readEntry, walkEntriesGenerator } from '@xmcl/unzip';
+import {
+  open,
+  openEntryReadStream,
+  walkEntriesGenerator,
+} from '@xmcl/unzip';
 import type {
   LauncherLogLevel,
   LauncherLogStage,
@@ -17,6 +26,7 @@ const execFileAsync = promisify(execFile);
 const discoApiBase = 'https://api.foojay.io/disco/v3.0';
 const userAgent =
   'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
+const maxJavaArchiveBytes = 512 * 1024 * 1024;
 
 type LogWriter = (
   level: LauncherLogLevel,
@@ -333,6 +343,21 @@ export type JavaInstallProgress = {
   percent: number;
   message: string;
   file?: string;
+};
+
+export type JavaChecksumAlgorithm = 'sha1' | 'sha256';
+
+export const normalizeJavaChecksumAlgorithm = (
+  checksumType: string | undefined,
+): JavaChecksumAlgorithm | null => {
+  const normalized = checksumType
+    ?.trim()
+    .toLowerCase()
+    .replaceAll('-', '');
+  if (normalized === 'sha1' || normalized === 'sha256') {
+    return normalized;
+  }
+  return null;
 };
 
 const pathExists = async (target: string) => {
@@ -893,7 +918,193 @@ export class JavaRuntimeService {
     return null;
   }
 
-  private async extractArchive(archivePath: string, destination: string) {
+  private validateDownloadUrl(value: string) {
+    let url: URL;
+    try {
+      url = new URL(value);
+    } catch (error) {
+      throw new MinecraftError(
+        'JavaランタイムのダウンロードURLが不正です。',
+        'java',
+        'JAVA_DOWNLOAD_URL_INVALID',
+        { url: value },
+        { cause: error },
+      );
+    }
+    const loopback =
+      url.hostname === '127.0.0.1' ||
+      url.hostname === 'localhost' ||
+      url.hostname === '::1';
+    if (url.protocol !== 'https:' && !loopback) {
+      throw new MinecraftError(
+        'JavaランタイムはHTTPS URLからのみダウンロードできます。',
+        'java',
+        'JAVA_DOWNLOAD_URL_INSECURE',
+        { protocol: url.protocol, host: url.host },
+      );
+    }
+    return url;
+  }
+
+  private async hashFile(target: string, algorithm: JavaChecksumAlgorithm) {
+    const hash = createHash(algorithm);
+    for await (const chunk of createReadStream(target)) {
+      hash.update(chunk as Buffer);
+    }
+    return hash.digest('hex');
+  }
+
+  private async downloadArchive(
+    downloadUri: string,
+    archivePath: string,
+    label: string,
+    onProgress: (progress: JavaInstallProgress) => void,
+  ) {
+    this.validateDownloadUrl(downloadUri);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(downloadUri, {
+        headers: { 'User-Agent': userAgent },
+        redirect: 'follow',
+      });
+    } catch (error) {
+      throw new MinecraftError(
+        `${label}のダウンロードに失敗しました。ネットワーク接続を確認してください。`,
+        'java',
+        'JAVA_DOWNLOAD_NETWORK_ERROR',
+        { url: downloadUri },
+        { cause: error },
+      );
+    }
+    if (!response.ok) {
+      throw new MinecraftError(
+        `${label}のダウンロードに失敗しました（HTTP ${response.status}）。`,
+        'java',
+        `HTTP_${response.status}`,
+        { url: downloadUri },
+      );
+    }
+    if (response.url) {
+      this.validateDownloadUrl(response.url);
+    }
+    if (!response.body) {
+      throw new MinecraftError(
+        `${label}のダウンロード応答が空です。`,
+        'java',
+        'JAVA_DOWNLOAD_EMPTY_BODY',
+        { url: response.url || downloadUri },
+      );
+    }
+    const declaredSize = Number.parseInt(
+      response.headers.get('content-length') ?? '',
+      10,
+    );
+    if (
+      Number.isFinite(declaredSize) &&
+      declaredSize > maxJavaArchiveBytes
+    ) {
+      throw new MinecraftError(
+        `${label}のアーカイブサイズが上限を超えています。`,
+        'java',
+        'JAVA_ARCHIVE_TOO_LARGE',
+        { declaredSize, maxBytes: maxJavaArchiveBytes },
+      );
+    }
+
+    let received = 0;
+    let lastReportedPercent = 10;
+    const meter = new Transform({
+      transform: (chunk: Buffer, _encoding, callback) => {
+        received += chunk.length;
+        if (received > maxJavaArchiveBytes) {
+          callback(
+            new MinecraftError(
+              `${label}のアーカイブサイズが上限を超えています。`,
+              'java',
+              'JAVA_ARCHIVE_TOO_LARGE',
+              { received, maxBytes: maxJavaArchiveBytes },
+            ),
+          );
+          return;
+        }
+        if (Number.isFinite(declaredSize) && declaredSize > 0) {
+          const percent = Math.min(
+            55,
+            10 + Math.floor((received / declaredSize) * 45),
+          );
+          if (percent > lastReportedPercent) {
+            lastReportedPercent = percent;
+            onProgress({
+              percent,
+              message: `${label}をダウンロードしています`,
+            });
+          }
+        }
+        callback(null, chunk);
+      },
+    });
+    try {
+      await pipeline(
+        Readable.fromWeb(response.body as never),
+        meter,
+        createWriteStream(archivePath, { flags: 'wx' }),
+      );
+    } catch (error) {
+      await fs.rm(archivePath, { force: true }).catch((): void => undefined);
+      if (error instanceof MinecraftError) throw error;
+      throw new MinecraftError(
+        `${label}のアーカイブを保存できませんでした。`,
+        'java',
+        'JAVA_DOWNLOAD_WRITE_FAILED',
+        { archivePath, received },
+        { cause: error },
+      );
+    }
+    if (
+      Number.isFinite(declaredSize) &&
+      declaredSize >= 0 &&
+      received !== declaredSize
+    ) {
+      await fs.rm(archivePath, { force: true }).catch((): void => undefined);
+      throw new MinecraftError(
+        `${label}のダウンロードサイズが一致しません。`,
+        'java',
+        'JAVA_DOWNLOAD_SIZE_MISMATCH',
+        { expectedSize: declaredSize, actualSize: received },
+      );
+    }
+    return received;
+  }
+
+  private async cleanupStaleInstallArtifacts() {
+    await fs.mkdir(this.managedRoot, { recursive: true });
+    const prefixes = ['.staging-', '.download-'];
+    let removed = 0;
+    for (const entry of await fs.readdir(this.managedRoot, {
+      withFileTypes: true,
+    })) {
+      if (!prefixes.some((prefix) => entry.name.startsWith(prefix))) continue;
+      await fs.rm(path.join(this.managedRoot, entry.name), {
+        recursive: true,
+        force: true,
+      });
+      removed += 1;
+    }
+    if (removed > 0) {
+      this.log(
+        'warn',
+        'java',
+        '前回中断されたJavaインストールの一時ファイルを削除しました。',
+        { removed },
+      );
+    }
+  }
+
+  private async extractArchive(
+    archivePath: string,
+    destination: string,
+    onEntry?: (processed: number, total: number) => void,
+  ) {
     if (archivePath.endsWith('.zip')) {
       const zip = await open(archivePath, {
         lazyEntries: true,
@@ -901,6 +1112,7 @@ export class JavaRuntimeService {
       });
       try {
         const root = path.resolve(destination);
+        let processed = 0;
         for await (const entry of walkEntriesGenerator(zip)) {
           if (entry.fileName.endsWith('/')) continue;
           const target = path.resolve(root, entry.fileName);
@@ -913,7 +1125,10 @@ export class JavaRuntimeService {
             );
           }
           await fs.mkdir(path.dirname(target), { recursive: true });
-          await fs.writeFile(target, await readEntry(zip, entry));
+          const input = await openEntryReadStream(zip, entry);
+          await pipeline(input, createWriteStream(target, { flags: 'wx' }));
+          processed += 1;
+          onEntry?.(processed, zip.entryCount);
         }
       } finally {
         zip.close();
@@ -1057,56 +1272,78 @@ export class JavaRuntimeService {
       packageType: pkg.package_type,
     });
 
-    let response: Response;
-    try {
-      response = await this.fetchImpl(downloadUri, {
-        headers: { 'User-Agent': userAgent },
-      });
-    } catch (error) {
-      throw new MinecraftError(
-        `${label} のダウンロードに失敗しました（ネットワークを確認してください）。`,
-        'java',
-        'JAVA_DOWNLOAD_NETWORK_ERROR',
-        { url: downloadUri },
-        { cause: error },
-      );
-    }
-    if (!response.ok) {
-      throw new MinecraftError(
-        `${label} のダウンロードに失敗しました (HTTP ${response.status})。`,
-        'java',
-        `HTTP_${response.status}`,
-        { url: downloadUri },
-      );
-    }
-    const data = Buffer.from(await response.arrayBuffer());
-    if (checksum && /^sha-?256$/i.test(checksumType)) {
-      const actual = createHash('sha256').update(data).digest('hex');
-      if (actual !== checksum.toLowerCase()) {
-        throw new MinecraftError(
-          `${label} のSHA-256検証に失敗しました。`,
-          'java',
-          'JAVA_CHECKSUM_MISMATCH',
-          { filename: pkg.filename },
-        );
-      }
-    }
-
-    onProgress({ percent: 60, message: `${label} を展開しています` });
     const directoryName = `${distribution}-${major}-${this.discoArchitecture()}`;
     const destination = path.join(this.managedRoot, directoryName);
+    await this.cleanupStaleInstallArtifacts();
     const staging = path.join(
       this.managedRoot,
       `.staging-${directoryName}-${Date.now()}`,
     );
+    const safeArchiveName = path.basename(pkg.filename);
     const archivePath = path.join(
-      os.tmpdir(),
-      `scl-java-${Date.now()}-${pkg.filename}`,
+      this.managedRoot,
+      `.download-${directoryName}-${Date.now()}-${safeArchiveName}`,
     );
     try {
-      await fs.mkdir(this.managedRoot, { recursive: true });
-      await fs.writeFile(archivePath, data);
-      await this.extractArchive(archivePath, staging);
+      const downloadedBytes = await this.downloadArchive(
+        downloadUri,
+        archivePath,
+        label,
+        onProgress,
+      );
+      this.log('info', 'java', 'Javaランタイムをダウンロードしました。', {
+        distribution,
+        major,
+        archivePath,
+        downloadedBytes,
+        finalUrlHost: new URL(downloadUri).host,
+      });
+      if (checksum) {
+        const checksumAlgorithm = normalizeJavaChecksumAlgorithm(checksumType);
+        if (!checksumAlgorithm) {
+          throw new MinecraftError(
+            `${label}のチェックサム形式に対応していません。`,
+            'java',
+            'JAVA_CHECKSUM_UNSUPPORTED',
+            { checksumType, filename: safeArchiveName },
+          );
+        }
+        const actual = await this.hashFile(archivePath, checksumAlgorithm);
+        if (actual !== checksum.toLowerCase()) {
+          throw new MinecraftError(
+            `${label}の${checksumAlgorithm.toUpperCase()}検証に失敗しました。`,
+            'java',
+            'JAVA_CHECKSUM_MISMATCH',
+            { filename: safeArchiveName },
+          );
+        }
+        this.log(
+          'info',
+          'java',
+          `Javaアーカイブの${checksumAlgorithm.toUpperCase()}を確認しました。`,
+          { filename: safeArchiveName },
+        );
+      } else {
+        throw new MinecraftError(
+          `${label}のチェックサムが配布APIから提供されませんでした。`,
+          'java',
+          'JAVA_CHECKSUM_MISSING',
+          { filename: safeArchiveName },
+        );
+      }
+
+      onProgress({ percent: 60, message: `${label} を展開しています` });
+      await this.extractArchive(archivePath, staging, (processed, total) => {
+        const percent = Math.min(
+          85,
+          60 + Math.floor((processed / Math.max(total, 1)) * 25),
+        );
+        onProgress({
+          percent,
+          message: `${label} を展開しています (${processed}/${total})`,
+          file: safeArchiveName,
+        });
+      });
       const home = await this.findJavaHome(staging);
       if (!home) {
         throw new MinecraftError(
@@ -1126,6 +1363,27 @@ export class JavaRuntimeService {
       }
       await fs.rm(destination, { recursive: true, force: true });
       await fs.rename(staging, destination);
+    } catch (error) {
+      this.log('error', 'java', 'Javaランタイムのインストールに失敗しました。', {
+        distribution,
+        major,
+        archivePath,
+        staging,
+        destination,
+        code:
+          error instanceof MinecraftError
+            ? error.code
+            : 'JAVA_INSTALL_UNEXPECTED_ERROR',
+        message: error instanceof Error ? error.message : String(error),
+      });
+      if (error instanceof MinecraftError) throw error;
+      throw new MinecraftError(
+        `${label}のインストール処理に失敗しました。`,
+        'java',
+        'JAVA_INSTALL_UNEXPECTED_ERROR',
+        { distribution, major },
+        { cause: error },
+      );
     } finally {
       await fs.rm(archivePath, { force: true }).catch((): void => undefined);
       await fs

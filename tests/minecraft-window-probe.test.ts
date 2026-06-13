@@ -9,11 +9,15 @@ const candidate = (
   update: Partial<WindowProbeCandidate> = {},
 ): WindowProbeCandidate => ({
   pid: 1234,
+  parentPid: 1000,
   pidInTree: true,
   handle: 100,
   title: 'Minecraft 1.20.1',
+  className: 'LWJGL',
+  executablePath: 'C:\\Java\\bin\\javaw.exe',
   visible: true,
   minimized: false,
+  cloaked: false,
   ownerHandle: 0,
   bounds: { x: 100, y: 100, width: 1280, height: 720 },
   intersectsVirtualScreen: true,
@@ -32,6 +36,10 @@ test('only a visible on-screen top-level window in the Java PID tree is confirme
   );
   assert.equal(
     isConfirmedMinecraftWindow(candidate({ minimized: true })),
+    false,
+  );
+  assert.equal(
+    isConfirmedMinecraftWindow(candidate({ cloaked: true })),
     false,
   );
   assert.equal(

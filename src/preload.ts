@@ -21,6 +21,10 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('launcher:open-instance-folder', profileId),
   openInstanceLogs: (profileId: string) =>
     ipcRenderer.invoke('launcher:open-instance-logs', profileId),
+  openLatestLog: (profileId: string) =>
+    ipcRenderer.invoke('launcher:open-latest-log', profileId),
+  copyReproductionScript: (profileId: string) =>
+    ipcRenderer.invoke('launcher:copy-reproduction-script', profileId),
   saveSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('launcher:save-settings', settings),
   saveProfile: (profile: Record<string, unknown>) =>

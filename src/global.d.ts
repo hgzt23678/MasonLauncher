@@ -272,6 +272,8 @@ declare global {
       openDirectory: () => Promise<ActionResult>;
       openInstanceFolder: (profileId: string) => Promise<ActionResult>;
       openInstanceLogs: (profileId: string) => Promise<ActionResult>;
+      openLatestLog: (profileId: string) => Promise<ActionResult>;
+      copyReproductionScript: (profileId: string) => Promise<ActionResult>;
       saveSettings: (
         settings: Record<string, unknown>,
       ) => Promise<LauncherState>;

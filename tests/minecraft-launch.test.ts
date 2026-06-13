@@ -12,7 +12,10 @@ import {
   parseJavaMajorVersion,
   resolveMicrosoftLaunchPlaceholders,
 } from '../src/minecraft-launch-resolver';
-import { MinecraftProcessRunner } from '../src/minecraft-process-runner';
+import {
+  buildPowerShellReproductionScript,
+  MinecraftProcessRunner,
+} from '../src/minecraft-process-runner';
 import { MinecraftError } from '../src/minecraft-errors';
 import type { MinecraftWindowProbe } from '../src/minecraft-window-probe';
 
@@ -239,6 +242,23 @@ test('ProcessRunnerはshellを使わずtokenをログでマスクする', () => 
   assert.equal(states[0]?.running, true);
 });
 
+test('PowerShell再現スクリプトはtokenを保存しない', () => {
+  const script = buildPowerShellReproductionScript(
+    'C:\\Java Runtime\\bin\\java.exe',
+    [
+      '-cp',
+      'C:\\Game Path\\client.jar',
+      '--accessToken',
+      'top-secret-token',
+    ],
+    'C:\\Game Path',
+  );
+
+  assert.match(script, /\$env:MASON_MC_ACCESS_TOKEN/);
+  assert.match(script, /Push-Location -LiteralPath/);
+  assert.doesNotMatch(script, /top-secret-token/);
+});
+
 test('ProcessRunner rejects exit code 0 after 16 seconds when no window appeared', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-process-log-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -329,6 +349,7 @@ test('XMCL init log does not count as a confirmed Minecraft window', async (t) =
     supported: true,
     rootPid,
     checkedAt: new Date().toISOString(),
+    processTree: [],
     candidates: [],
   });
   const states: Array<{
@@ -401,13 +422,22 @@ test('a verified visible window is the only event that confirms the screen', asy
     supported: true,
     rootPid,
     checkedAt: new Date().toISOString(),
+    processTree: [{
+      pid: rootPid,
+      parentPid: null,
+      executablePath: 'C:\\Java\\bin\\java.exe',
+    }],
     candidates: [{
       pid: rootPid,
+      parentPid: null,
       pidInTree: true,
       handle: 100,
       title: 'Minecraft 1.20.1',
+      className: 'LWJGL',
+      executablePath: 'C:\\Java\\bin\\java.exe',
       visible: true,
       minimized: false,
+      cloaked: false,
       ownerHandle: 0,
       bounds: { x: 100, y: 100, width: 1280, height: 720 },
       intersectsVirtualScreen: true,
@@ -451,7 +481,7 @@ test('a verified visible window is the only event that confirms the screen', asy
   for (
     let attempt = 0;
     attempt < 100 &&
-    !states.some((state) => state.message === 'Minecraft画面を確認しました。');
+    !states.some((state) => state.message.includes('Minecraft画面を確認しました'));
     attempt += 1
   ) {
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -463,7 +493,7 @@ test('a verified visible window is the only event that confirms the screen', asy
   }
 
   assert.ok(
-    states.some((state) => state.message === 'Minecraft画面を確認しました。'),
+    states.some((state) => state.message.includes('Minecraft画面を確認しました')),
   );
   assert.equal(states.at(-1)?.category, undefined);
 });
@@ -481,13 +511,22 @@ test('a window that disappears immediately is not treated as a successful launch
     supported: true,
     rootPid,
     checkedAt: new Date().toISOString(),
+    processTree: [{
+      pid: rootPid,
+      parentPid: null,
+      executablePath: 'C:\\Java\\bin\\java.exe',
+    }],
     candidates: [{
       pid: rootPid,
+      parentPid: null,
       pidInTree: true,
       handle: 101,
       title: 'Minecraft',
+      className: 'LWJGL',
+      executablePath: 'C:\\Java\\bin\\java.exe',
       visible: true,
       minimized: false,
+      cloaked: false,
       ownerHandle: 0,
       bounds: { x: 10, y: 10, width: 800, height: 600 },
       intersectsVirtualScreen: true,
@@ -531,7 +570,7 @@ test('a window that disappears immediately is not treated as a successful launch
   for (
     let attempt = 0;
     attempt < 100 &&
-    !states.some((state) => state.message === 'Minecraft画面を確認しました。');
+    !states.some((state) => state.message.includes('Minecraft画面を確認しました'));
     attempt += 1
   ) {
     await new Promise((resolve) => setTimeout(resolve, 10));

@@ -10,6 +10,7 @@ import {
   JavaRuntimeService,
   defaultJavaSettings,
   detectDistributionFromBanner,
+  normalizeJavaChecksumAlgorithm,
   normalizeJavaSettings,
   requiredJavaMajor,
   type JavaProbe,
@@ -303,11 +304,20 @@ const buildJavaZip = () =>
     zip.end();
   });
 
-test('Foojay Disco API経由でJavaをインストールしSHA-256検証する', async (t) => {
+test('Java配布チェックサム形式を正規化する', () => {
+  assert.equal(normalizeJavaChecksumAlgorithm('sha1'), 'sha1');
+  assert.equal(normalizeJavaChecksumAlgorithm('SHA-1'), 'sha1');
+  assert.equal(normalizeJavaChecksumAlgorithm('sha256'), 'sha256');
+  assert.equal(normalizeJavaChecksumAlgorithm('SHA-256'), 'sha256');
+  assert.equal(normalizeJavaChecksumAlgorithm('md5'), null);
+  assert.equal(normalizeJavaChecksumAlgorithm(undefined), null);
+});
+
+test('Foojay Disco API経由でJavaをインストールしSHA-1検証する', async (t) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'scl-java-install-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const archive = await buildJavaZip();
-  const checksum = createHash('sha256').update(archive).digest('hex');
+  const checksum = createHash('sha1').update(archive).digest('hex');
 
   const server = http.createServer((request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -361,7 +371,7 @@ test('Foojay Disco API経由でJavaをインストールしSHA-256検証する',
               filename: 'bellsoft-jre21.0.1-windows-amd64-lite.zip',
               direct_download_uri: `${baseUrl}/download/java.zip`,
               checksum,
-              checksum_type: 'sha256',
+              checksum_type: 'sha1',
             },
           ],
         }),
@@ -397,6 +407,14 @@ test('Foojay Disco API経由でJavaをインストールしSHA-256検証する',
       'liberica-lite-21-x64': { major: 21, banner: 'BellSoft Liberica lite' },
     }),
   });
+  const staleStaging = path.join(
+    root,
+    'java',
+    'managed',
+    '.staging-liberica-lite-21-x64-old',
+  );
+  await fs.mkdir(staleStaging, { recursive: true });
+  await fs.writeFile(path.join(staleStaging, 'partial'), 'incomplete');
 
   const progress: number[] = [];
   const installed = await service.installRuntime('liberica-lite', 21, (event) =>
@@ -410,6 +428,7 @@ test('Foojay Disco API経由でJavaをインストールしSHA-256検証する',
     await fs.readFile(installed.path, 'utf8'),
     'fake java exe',
   );
+  await assert.rejects(fs.access(staleStaging));
   assert.ok(progress.includes(100));
 });
 
