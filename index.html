@@ -17,12 +17,7 @@
           <span></span><span></span><span></span><span></span>
         </div>
         <nav class="sidebar-nav" aria-label="メインメニュー">
-          <md-icon-button class="nav-icon-btn" data-active="true" type="button" aria-label="ホーム">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M3 11.5 12 4l9 7.5v8a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>
-            </svg>
-          </md-icon-button>
-          <md-icon-button class="nav-icon-btn" id="profiles-nav" type="button" aria-label="プロファイル">
+          <md-icon-button class="nav-icon-btn" id="profiles-nav" data-active="true" type="button" aria-label="プロファイル">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/>
               <rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/>
@@ -246,8 +241,6 @@
           </md-icon-button>
         </header>
 
-        <input id="profile-id-input" type="hidden" />
-
         <div class="settings-section">
           <md-filled-text-field
             id="profile-name-input"
@@ -264,14 +257,6 @@
             <md-primary-tab data-profile-tab="neoforge">NeoForge</md-primary-tab>
             <md-primary-tab data-profile-tab="fabric">Fabric</md-primary-tab>
           </md-tabs>
-
-          <!-- Hidden native select kept for JS value tracking -->
-          <select id="profile-loader-select" style="display:none">
-            <option value="vanilla">Vanilla</option>
-            <option value="forge">Forge</option>
-            <option value="neoforge">NeoForge</option>
-            <option value="fabric">Fabric</option>
-          </select>
 
           <div id="profile-vanilla-panel" class="tab-panel">
             <md-filled-select id="profile-version-select" label="Minecraft バージョン"></md-filled-select>

@@ -30,6 +30,23 @@ const run = async () => {
     window,
     `document.querySelector('[data-profile-id="forge-profile"] [data-action="edit"]') !== null`,
   );
+  const navigationState = await window.webContents.executeJavaScript(`(() => ({
+    labels: [...document.querySelectorAll('.sidebar-nav md-icon-button')]
+      .map((button) => button.getAttribute('aria-label')),
+    activeId: document.querySelector('.sidebar-nav [data-active="true"]')?.id ?? null,
+    legacyLoaderSelectPresent: document.querySelector('#profile-loader-select') !== null,
+    legacyProfileIdInputPresent: document.querySelector('#profile-id-input') !== null
+  }))()`);
+  if (
+    navigationState.activeId !== 'profiles-nav' ||
+    navigationState.labels.includes('ホーム') ||
+    navigationState.legacyLoaderSelectPresent ||
+    navigationState.legacyProfileIdInputPresent
+  ) {
+    throw new Error(
+      `Sidebar or profile loader state is inconsistent: ${JSON.stringify(navigationState)}`,
+    );
+  }
   const cardMetrics = await window.webContents.executeJavaScript(`(() =>
     [...document.querySelectorAll('.profile-card')].map((card) => {
       const cardBounds = card.getBoundingClientRect();
@@ -70,7 +87,11 @@ const run = async () => {
     editorOpen: document.querySelector('#profile-modal')?.hasAttribute('hidden') === false
   }))()`);
   console.log(
-    `MODRINTH_UI_PASS ${JSON.stringify({ ...result, cardMetrics })}`,
+    `MODRINTH_UI_PASS ${JSON.stringify({
+      ...result,
+      cardMetrics,
+      navigationState,
+    })}`,
   );
   window.destroy();
   app.exit(0);

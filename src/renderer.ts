@@ -645,10 +645,8 @@ const screenshotCount = byId<HTMLElement>('screenshot-count');
 const profileModal = byId<HTMLElement>('profile-modal');
 const profileModalTitle = byId<HTMLElement>('profile-modal-title');
 const profileModalClose = byId<HTMLElement>('profile-modal-close');
-const profileIdInput = byId<HTMLInputElement>('profile-id-input');
 const profileNameInput = byId<HTMLElement>('profile-name-input');
 const profileVersionSelect = byId<HTMLElement>('profile-version-select');
-const profileLoaderSelect = byId<HTMLSelectElement>('profile-loader-select');
 const profileVanillaPanel = byId<HTMLElement>('profile-vanilla-panel');
 const profileForgePanel = byId<HTMLElement>('profile-forge-panel');
 const profileForgeMinecraftSelect = byId<HTMLElement>('profile-forge-minecraft-select');
@@ -694,6 +692,8 @@ let javaRuntimes: JavaRuntimeInfo[] = [];
 let javaRuntimesLoaded = false;
 let pendingCustomJavaPath: string | null = null;
 let showSnapshots = false;
+let activeProfileLoader: ProfileLoader = 'vanilla';
+let editingProfileId = '';
 const popularModsCache = new Map<
   string,
   { expiresAt: number; projects: ModrinthSearchHit[] }
@@ -1103,7 +1103,7 @@ const refreshState = async () => {
 
 const updateProfileSaveAvailability = () => {
   if (!saveProfileButton) return;
-  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loader = activeProfileLoader;
   const loaderVersion = (profileForgeVersionSelect as MdEl)?.value as
     | string
     | undefined;
@@ -1205,8 +1205,8 @@ const setProfileTab = (
   if (profileVanillaPanel) profileVanillaPanel.hidden = tab !== 'vanilla';
   if (profileForgePanel) profileForgePanel.hidden = tab === 'vanilla';
 
-  if (updateLoader && profileLoaderSelect) {
-    profileLoaderSelect.value = tab;
+  if (updateLoader) {
+    activeProfileLoader = tab;
   }
   if (profileModSearchDescription && tab !== 'vanilla') {
     profileModSearchDescription.textContent =
@@ -1219,13 +1219,13 @@ const setProfileTab = (
 
 const renderSelectedMods = () => {
   if (!selectedModList || !profileModCount || !profileModsSection) return;
-  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loader = activeProfileLoader;
   const modded = isModLoader(loader);
   profileModsSection.classList.toggle('disabled', !modded);
   profileModCount.textContent = `${installedMods.length} MOD`;
   selectedModList.replaceChildren();
 
-  if (!profileIdInput?.value) {
+  if (!editingProfileId) {
     const note = document.createElement('p');
     note.className = 'empty-mod-message';
     note.textContent = 'MODを追加するには、先にプロファイルを保存してください。';
@@ -1473,7 +1473,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
       ? 'プロファイルを編集'
       : 'プロファイルを作成';
   }
-  if (profileIdInput) profileIdInput.value = profile?.id ?? '';
+  editingProfileId = profile?.id ?? '';
   if (profileNameInput) (profileNameInput as MdEl).value = profile?.name ?? '';
   // Sync snapshot toggle UI state before populating the select.
   const snapshotToggle = byId<HTMLElement>('snapshot-toggle');
@@ -1493,9 +1493,7 @@ const openProfileEditor = (profile?: LaunchProfile) => {
     )?.id ??
     '';
   populateForgeMinecraftSelect(minecraftVersion);
-  if (profileLoaderSelect) {
-    profileLoaderSelect.value = profile?.loaderType ?? 'vanilla';
-  }
+  activeProfileLoader = profile?.loaderType ?? 'vanilla';
   if (profileMinMemoryInput) {
     (profileMinMemoryInput as MdEl).value = String(
       profile?.minMemory ?? currentState.settings.minMemory,
@@ -1548,15 +1546,14 @@ const openProfileEditor = (profile?: LaunchProfile) => {
 
 const editorProfile = () =>
   currentState?.profiles.find(
-    (profile) => profile.id === profileIdInput?.value,
+    (profile) => profile.id === editingProfileId,
   );
 
 const saveProfileEditor = async (close = true) => {
   if (!saveProfileButton) return undefined;
   (saveProfileButton as MdEl).disabled = true;
   try {
-    const loader = (profileLoaderSelect?.value ??
-      'vanilla') as ProfileLoader;
+    const loader = activeProfileLoader;
     const minecraftVersion =
       isModLoader(loader)
         ? ((profileForgeMinecraftSelect as MdEl)?.value as string) ?? ''
@@ -1578,7 +1575,7 @@ const saveProfileEditor = async (close = true) => {
       }
     }
     const state = await api.saveProfile({
-      id: profileIdInput?.value || undefined,
+      id: editingProfileId || undefined,
       name: ((profileNameInput as MdEl)?.value as string) ?? '',
       profileType: loader,
       loaderType: loader,
@@ -1593,7 +1590,7 @@ const saveProfileEditor = async (close = true) => {
       java: collectProfileJavaSettings(),
     });
     renderState(state);
-    if (profileIdInput) profileIdInput.value = state.selectedProfileId;
+    editingProfileId = state.selectedProfileId;
     if (close) {
       closeProfileModal();
       showToast('プロファイルを保存しました。');
@@ -1826,7 +1823,7 @@ saveProfileButton?.addEventListener('click', () => {
 });
 
 deleteProfileButton?.addEventListener('click', async () => {
-  const id = profileIdInput?.value;
+  const id = editingProfileId;
   if (!id) return;
   (deleteProfileButton as MdEl).disabled = true;
   try {
@@ -1843,10 +1840,6 @@ deleteProfileButton?.addEventListener('click', async () => {
   } finally {
     (deleteProfileButton as MdEl).disabled = false;
   }
-});
-
-profileLoaderSelect?.addEventListener('change', () => {
-  renderSelectedMods();
 });
 
 document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
@@ -1884,7 +1877,7 @@ document.getElementById('profile-type-tabs')?.addEventListener('change', () => {
 profileForgeMinecraftSelect?.addEventListener('change', () => {
   const val = (profileForgeMinecraftSelect as MdEl).value as string;
   if (!val) return;
-  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loader = activeProfileLoader;
   if (isModLoader(loader)) {
     void loadModLoaderBuilds(loader, val);
   }
@@ -1893,7 +1886,7 @@ profileForgeMinecraftSelect?.addEventListener('change', () => {
 profileForgeVersionSelect?.addEventListener('change', () => {
   const loaderVersion = (profileForgeVersionSelect as MdEl).value as string;
   const mcVal = (profileForgeMinecraftSelect as MdEl)?.value as string;
-  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loader = activeProfileLoader;
   if (profileForgeBuildStatus) {
     profileForgeBuildStatus.textContent = loaderVersion
       ? `Minecraft ${mcVal} / ${loaderLabel(loader)} ${loaderVersion}`
@@ -1903,7 +1896,7 @@ profileForgeVersionSelect?.addEventListener('change', () => {
 });
 
 modSearchButton?.addEventListener('click', async () => {
-  const loader = (profileLoaderSelect?.value ?? 'vanilla') as ProfileLoader;
+  const loader = activeProfileLoader;
   if (!isModLoader(loader)) {
     showToast('MODを追加するにはMODローダーを選択してください。', true);
     return;
@@ -1945,9 +1938,9 @@ modSearchInput?.addEventListener('input', () => {
     modSearchHadQuery = true;
     return;
   }
-  if (modSearchHadQuery && profileIdInput?.value) {
+  if (modSearchHadQuery && editingProfileId) {
     modSearchHadQuery = false;
-    void loadPopularModsForCurrentInstance(profileIdInput.value);
+    void loadPopularModsForCurrentInstance(editingProfileId);
   }
 });
 
@@ -1955,14 +1948,14 @@ modSearchResults?.addEventListener('click', async (event) => {
   const retry = (event.target as HTMLElement).closest<HTMLElement>(
     '[data-action="retry-popular"]',
   );
-  if (retry && profileIdInput?.value) {
-    void loadPopularModsForCurrentInstance(profileIdInput.value, true);
+  if (retry && editingProfileId) {
+    void loadPopularModsForCurrentInstance(editingProfileId, true);
     return;
   }
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
     '[data-project]',
   );
-  const profileId = profileIdInput?.value;
+  const profileId = editingProfileId;
   if (!button?.dataset.project || !profileId) return;
   button.disabled = true;
   try {
@@ -2002,7 +1995,7 @@ selectedModList?.addEventListener('click', async (event) => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>(
     '[data-project-id]',
   );
-  const profileId = profileIdInput?.value;
+  const profileId = editingProfileId;
   if (!button?.dataset.projectId || !profileId) return;
   try {
     await api.modrinthRemoveInstalledMod(
