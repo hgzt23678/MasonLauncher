@@ -48,6 +48,10 @@ import {
   resolvedModLoaderVersionId,
   type ModLoaderType,
 } from './mod-loader-service';
+import {
+  normalizeLanguagePreference,
+  type LanguagePreference,
+} from './i18n';
 
 type ProfileLoader = 'vanilla' | ModLoaderType;
 
@@ -56,6 +60,7 @@ type LauncherSettings = {
   minMemory: number;
   maxMemory: number;
   showDeveloperLogs: boolean;
+  language: LanguagePreference;
   microsoftClientId: string;
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -221,6 +226,7 @@ const defaultSettings = (): LauncherSettings => ({
   minMemory: 1024,
   maxMemory: 4096,
   showDeveloperLogs: developerLogsVisibleByDefault(buildConfiguration),
+  language: 'system',
   microsoftClientId: __MICROSOFT_CLIENT_ID__.trim(),
   profiles: [
     {
@@ -382,6 +388,7 @@ const readSettings = async (): Promise<LauncherSettings> => {
         typeof value.showDeveloperLogs === 'boolean'
           ? value.showDeveloperLogs
           : defaults.showDeveloperLogs,
+      language: normalizeLanguagePreference(value.language),
       microsoftClientId: resolveMicrosoftClientId(
         value.microsoftClientId,
         defaults.microsoftClientId,
@@ -906,6 +913,7 @@ const getLauncherState = async () => {
       minMemory: settings.minMemory,
       maxMemory: settings.maxMemory,
       showDeveloperLogs: settings.showDeveloperLogs,
+      language: settings.language,
     },
     profiles: settings.profiles,
     selectedProfileId: settings.selectedProfileId,
@@ -1048,6 +1056,9 @@ const registerIpcHandlers = () => {
     }
     if (typeof update.showDeveloperLogs === 'boolean') {
       settings.showDeveloperLogs = update.showDeveloperLogs;
+    }
+    if (typeof update.language === 'string') {
+      settings.language = normalizeLanguagePreference(update.language);
     }
     await writeSettings(settings);
     return getLauncherState();

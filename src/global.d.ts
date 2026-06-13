@@ -122,6 +122,7 @@ type LauncherState = {
     minMemory: number;
     maxMemory: number;
     showDeveloperLogs: boolean;
+    language: import('./i18n').LanguagePreference;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;

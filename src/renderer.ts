@@ -16,6 +16,13 @@ import {
   filterSelectableVersions,
   formatVersionLabel,
 } from './renderer-logic';
+import {
+  resolveLanguage,
+  translate,
+  type LanguagePreference,
+  type SupportedLanguage,
+  type TranslationKey,
+} from './i18n';
 
 // Minimal interface for accessing md-* Web Component properties not on HTMLElement
 interface MdEl extends HTMLElement {
@@ -221,6 +228,7 @@ type LauncherState = {
     minMemory: number;
     maxMemory: number;
     showDeveloperLogs: boolean;
+    language: LanguagePreference;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -241,29 +249,29 @@ type LauncherLogEntry = {
   detail?: Record<string, unknown>;
 };
 
-const failureLabels: Record<string, string> = {
-  authentication: '認証失敗',
-  ownership: '所有権確認失敗',
-  manifest: 'manifest取得失敗',
-  download: 'ダウンロード失敗',
-  network: 'ネットワーク失敗',
-  verification: 'ファイル検証失敗',
-  json: 'メタデータ解析失敗',
-  java: 'Java未検出',
-  arguments: '起動引数生成失敗',
-  spawn: 'プロセス起動失敗',
-  crash: 'Minecraftクラッシュ',
-  'window-unverified': 'Minecraft画面未確認',
-  graphics: 'グラフィック初期化失敗',
-  memory: 'メモリ不足',
-  natives: 'LWJGL/natives失敗',
-  'forge-installer': 'Forge installer取得失敗',
-  'forge-profile': 'Forge install_profile解析失敗',
-  'forge-version-json': 'Forge version JSON抽出失敗',
-  'forge-library': 'Forge library取得失敗',
-  'forge-processor': 'Forge processor失敗',
-  'offline-auth': 'オフライン起動認可失敗',
-  'offline-files': 'ローカルファイル不足',
+const failureLabels: Record<string, TranslationKey> = {
+  authentication: 'failure.authentication',
+  ownership: 'failure.ownership',
+  manifest: 'failure.download',
+  download: 'failure.download',
+  network: 'failure.download',
+  verification: 'failure.verification',
+  json: 'failure.verification',
+  java: 'failure.java',
+  arguments: 'failure.arguments',
+  spawn: 'failure.process',
+  crash: 'failure.crash',
+  'window-unverified': 'failure.windowUnverified',
+  graphics: 'failure.crash',
+  memory: 'failure.java',
+  natives: 'failure.verification',
+  'forge-installer': 'failure.forge',
+  'forge-profile': 'failure.forge',
+  'forge-version-json': 'failure.forge',
+  'forge-library': 'failure.forge',
+  'forge-processor': 'failure.forge',
+  'offline-auth': 'failure.authentication',
+  'offline-files': 'failure.verification',
 };
 
 const formatCategorizedMessage = (
@@ -272,7 +280,7 @@ const formatCategorizedMessage = (
 ) => {
   const label =
     typeof category === 'string' ? failureLabels[category] : undefined;
-  return label ? `[${label}] ${message}` : message;
+  return label ? `[${t(label)}] ${message}` : message;
 };
 
 const demoState: LauncherState = {
@@ -330,6 +338,7 @@ const demoState: LauncherState = {
     minMemory: 1024,
     maxMemory: 4096,
     showDeveloperLogs: true,
+    language: 'system',
   },
   profiles: [
     {
@@ -421,6 +430,9 @@ const api = window.launcher ?? {
     }
     if (typeof settings.showDeveloperLogs === 'boolean') {
       demoState.settings.showDeveloperLogs = settings.showDeveloperLogs;
+    }
+    if (typeof settings.language === 'string') {
+      demoState.settings.language = settings.language as LanguagePreference;
     }
     return demoState;
   },
@@ -622,6 +634,7 @@ const logoutButton = byId<HTMLElement>('logout-button');
 const settingsLoginButton = byId<HTMLElement>('settings-login-button');
 const minMemoryInput = byId<HTMLElement>('min-memory-input');
 const maxMemoryInput = byId<HTMLElement>('max-memory-input');
+const languageSelect = byId<HTMLElement>('language-select');
 const saveSettingsButton = byId<HTMLElement>('save-settings-button');
 const loginButton = byId<HTMLElement>('login-button');
 const deviceCodePanel = byId<HTMLElement>('device-code-panel');
@@ -699,6 +712,45 @@ const popularModsCache = new Map<
 >();
 const popularModsCacheTtlMs = 60_000;
 let modSearchHadQuery = false;
+let currentLanguage: SupportedLanguage = resolveLanguage(
+  'system',
+  navigator.languages,
+);
+
+const t = (
+  key: TranslationKey,
+  parameters?: Record<string, string | number>,
+) => translate(currentLanguage, key, parameters);
+
+const applyDocumentTranslations = () => {
+  document.documentElement.lang = currentLanguage;
+  const translateAttribute = (
+    selector: string,
+    attribute: string,
+    dataAttribute: keyof DOMStringMap,
+  ) => {
+    for (const element of document.querySelectorAll<HTMLElement>(selector)) {
+      const key = element.dataset[dataAttribute] as TranslationKey | undefined;
+      if (key) element.setAttribute(attribute, t(key));
+    }
+  };
+  for (const element of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
+    const key = element.dataset.i18n as TranslationKey | undefined;
+    if (key) element.textContent = t(key);
+  }
+  translateAttribute('[data-i18n-label]', 'label', 'i18nLabel');
+  translateAttribute(
+    '[data-i18n-placeholder]',
+    'placeholder',
+    'i18nPlaceholder',
+  );
+  translateAttribute(
+    '[data-i18n-aria-label]',
+    'aria-label',
+    'i18nAriaLabel',
+  );
+  translateAttribute('[data-i18n-title]', 'title', 'i18nTitle');
+};
 
 const isModLoader = (loader: ProfileLoader): loader is ModLoader =>
   loader !== 'vanilla';
@@ -734,7 +786,7 @@ const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
   if (developerLogs.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'developer-log-empty';
-    empty.textContent = 'ログはまだありません。';
+    empty.textContent = t('logs.empty');
     developerLogList.append(empty);
     return;
   }
@@ -744,7 +796,11 @@ const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
     row.className = `developer-log-row ${entry.level}`;
     const time = document.createElement('time');
     time.dateTime = entry.timestamp;
-    time.textContent = new Date(entry.timestamp).toLocaleTimeString('ja-JP');
+    time.textContent = new Intl.DateTimeFormat(currentLanguage, {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    }).format(new Date(entry.timestamp));
     const stage = document.createElement('span');
     stage.textContent = entry.stage;
     const message = document.createElement('p');
@@ -836,28 +892,30 @@ const syncLoginScreen = (auth: AuthState) => {
 };
 
 const renderAuth = (auth: AuthState) => {
-  const name = auth.profile?.name ?? '未ログイン';
+  const name = auth.profile?.name ?? t('auth.signedOut');
   const initial = name.slice(0, 1) || '?';
   if (accountAvatar) accountAvatar.textContent = initial;
   if (accountLabel) {
     accountLabel.textContent = auth.signedIn
       ? name
-      : 'Microsoftでログイン';
+      : t('auth.signIn');
   }
   if (profileAvatar) profileAvatar.textContent = initial;
   if (profileName) profileName.textContent = name;
   if (profileStatus) {
     profileStatus.textContent = auth.signedIn
       ? auth.offline.allowed
-        ? `Minecraft: Java Edition 認証済み / キャッシュ期限 ${new Date(
+        ? `${t('auth.verified')} / ${new Intl.DateTimeFormat(
+            currentLanguage,
+          ).format(new Date(
             auth.offline.expiresAt ?? '',
-          ).toLocaleDateString('ja-JP')}`
-        : 'Minecraft: Java Edition 認証済み'
+          ))}`
+        : t('auth.verified')
       : auth.offline.allowed
-        ? '認証済みオフライン起動が利用できます。シングルプレイ向けです。'
+        ? t('auth.offlineAvailable')
       : auth.configured
-        ? 'Microsoftデバイスコードでログインできます'
-        : 'このビルドにはMicrosoft認証設定がありません';
+        ? t('auth.deviceAvailable')
+        : t('auth.notConfigured');
   }
   if (logoutButton) {
     logoutButton.hidden = !auth.signedIn && !auth.offline.allowed;
@@ -874,13 +932,13 @@ const renderAuth = (auth: AuthState) => {
     loginButton.hidden = auth.signedIn;
     (loginButton as MdEl).disabled = !auth.configured;
     loginButton.textContent = auth.configured
-      ? 'Microsoftアカウントでログイン'
-      : 'Microsoft認証が未設定です';
+      ? t('auth.signInAccount')
+      : t('auth.configurationMissing');
   }
   if (loginScreenStatus) {
     loginScreenStatus.textContent = auth.configured
-      ? '続行するにはMicrosoftアカウントでログインしてください。'
-      : 'このビルドにはMicrosoft認証設定が含まれていません。.env に MICROSOFT_CLIENT_ID を設定して再ビルドしてください。';
+      ? t('login.lead')
+      : t('auth.configurationHelp');
   }
   syncLoginScreen(auth);
 };
@@ -937,7 +995,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   version.className = 'profile-card-version';
   version.textContent =
     modded
-      ? `Minecraft ${profile.minecraftVersion} / ${displayLoader} ${profile.loaderVersion ?? '未選択'}`
+      ? `Minecraft ${profile.minecraftVersion} / ${displayLoader} ${profile.loaderVersion ?? t('status.notSelected')}`
       : `Minecraft ${profile.minecraftVersion}`;
 
   const memory = document.createElement('p');
@@ -949,7 +1007,9 @@ const createProfileCard = (profile: LaunchProfile) => {
   const installDot = document.createElement('span');
   installDot.className = `install-dot${isInstalled ? ' installed' : ''}`;
   const installLabel = document.createElement('span');
-  installLabel.textContent = isInstalled ? 'インストール済み' : '未インストール';
+  installLabel.textContent = isInstalled
+    ? t('profiles.installed')
+    : t('profiles.notInstalled');
   installStatus.append(installDot, installLabel);
 
   body.append(badges, name, version, memory, installStatus);
@@ -983,7 +1043,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   const editBtn = document.createElement('md-icon-button') as HTMLElement;
   editBtn.dataset.action = 'edit';
   editBtn.setAttribute('type', 'button');
-  editBtn.setAttribute('aria-label', '編集');
+  editBtn.setAttribute('aria-label', t('common.edit'));
   const editSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   editSvg.setAttribute('viewBox', '0 0 24 24');
   editSvg.setAttribute('width', '20');
@@ -996,7 +1056,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   const folderBtn = document.createElement('md-icon-button') as HTMLElement;
   folderBtn.dataset.action = 'open-folder';
   folderBtn.setAttribute('type', 'button');
-  folderBtn.setAttribute('aria-label', 'インスタンスフォルダを開く');
+  folderBtn.setAttribute('aria-label', t('profiles.openInstance'));
   const folderSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   folderSvg.setAttribute('viewBox', '0 0 24 24');
   folderSvg.setAttribute('width', '20');
@@ -1008,7 +1068,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   const logsBtn = document.createElement('md-icon-button') as HTMLElement;
   logsBtn.dataset.action = 'open-logs';
   logsBtn.setAttribute('type', 'button');
-  logsBtn.setAttribute('aria-label', 'ログフォルダを開く');
+  logsBtn.setAttribute('aria-label', t('profiles.openLogs'));
   const logsSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   logsSvg.setAttribute('viewBox', '0 0 24 24');
   logsSvg.setAttribute('width', '20');
@@ -1020,7 +1080,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   const latestLogBtn = document.createElement('md-icon-button') as HTMLElement;
   latestLogBtn.dataset.action = 'open-latest-log';
   latestLogBtn.setAttribute('type', 'button');
-  latestLogBtn.setAttribute('aria-label', 'latest.logを開く');
+  latestLogBtn.setAttribute('aria-label', t('profiles.openLatestLog'));
   const latestLogSvg = document.createElementNS(
     'http://www.w3.org/2000/svg',
     'svg',
@@ -1038,7 +1098,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   reproBtn.setAttribute('type', 'button');
   reproBtn.setAttribute(
     'aria-label',
-    'PowerShell再現スクリプトをコピー',
+    t('profiles.copyRepro'),
   );
   const reproSvg = document.createElementNS(
     'http://www.w3.org/2000/svg',
@@ -1102,6 +1162,8 @@ const populateVersionSelect = (
 };
 
 const renderState = (state: LauncherState) => {
+  currentLanguage = resolveLanguage(state.settings.language, navigator.languages);
+  applyDocumentTranslations();
   currentState = state;
   if (directoryPath) {
     directoryPath.textContent = state.gameDirectory;
@@ -1117,8 +1179,8 @@ const renderState = (state: LauncherState) => {
     const label = scanStatus.querySelector('span:last-child');
     if (label) {
       label.textContent = state.mojangAvailable
-        ? `${state.profiles.length} プロファイル / Mojang 接続済み`
-        : 'Mojang に接続できません';
+        ? t('profiles.scanConnected', { count: state.profiles.length })
+        : t('profiles.scanFailed');
     }
     scanStatus.classList.toggle('warning', !state.mojangAvailable);
   }
@@ -1128,9 +1190,19 @@ const renderState = (state: LauncherState) => {
   if (maxMemoryInput) {
     (maxMemoryInput as MdEl).value = String(state.settings.maxMemory);
   }
+  if (languageSelect) {
+    (languageSelect as MdEl).value = state.settings.language;
+  }
   setDeveloperLogsVisible(state.settings.showDeveloperLogs);
   renderProfileGrid();
   renderAuth(state.auth);
+  if (javaRuntimesLoaded) {
+    renderJavaRuntimeList();
+    updateProfileJavaStatus();
+  }
+  if (!profileModal?.hidden) {
+    renderSelectedMods();
+  }
 };
 
 const refreshState = async () => {
@@ -1141,7 +1213,7 @@ const refreshState = async () => {
     showToast(
       error instanceof Error
         ? error.message
-        : 'ランチャー情報の読み込みに失敗しました。',
+        : t('profiles.loadFailed'),
       true,
     );
   } finally {
@@ -1258,8 +1330,7 @@ const setProfileTab = (
   }
   if (profileModSearchDescription && tab !== 'vanilla') {
     profileModSearchDescription.textContent =
-      `Minecraft版と${loaderLabel(tab)}に対応するMODを表示します。` +
-      ' 空欄検索は人気順です。';
+      `${t('mods.description')} ${t('mods.popularHint')}`;
   }
   renderSelectedMods();
   updateProfileSaveAvailability();
@@ -1276,7 +1347,7 @@ const renderSelectedMods = () => {
   if (!editingProfileId) {
     const note = document.createElement('p');
     note.className = 'empty-mod-message';
-    note.textContent = 'MODを追加するには、先にプロファイルを保存してください。';
+    note.textContent = t('mods.addProfileFirst');
     selectedModList.append(note);
     return;
   }
@@ -1284,8 +1355,8 @@ const renderSelectedMods = () => {
     const note = document.createElement('p');
     note.className = 'empty-mod-message';
     note.textContent = modded
-      ? 'このインスタンスにインストール済みのMODはありません。'
-      : 'MODローダーを選択するとMODを追加できます。';
+      ? t('mods.noneInstalled')
+      : t('mods.selectLoader');
     selectedModList.append(note);
     return;
   }
@@ -1300,7 +1371,7 @@ const renderSelectedMods = () => {
     name.textContent = mod.title;
     const remove = document.createElement('md-text-button') as unknown as HTMLButtonElement;
     remove.dataset.projectId = mod.projectId ?? mod.fileName;
-    remove.textContent = '削除';
+    remove.textContent = t('common.delete');
     row.append(icon, name, remove);
     selectedModList.append(row);
   }
@@ -1314,7 +1385,7 @@ const loadInstalledMods = async (profileId: string) => {
     showToast(
       error instanceof Error
         ? error.message
-        : 'インストール済みMODを読み込めませんでした。',
+        : t('mods.installedLoadFailed'),
       true,
     );
   }
@@ -1331,11 +1402,14 @@ const describeJavaRuntime = (runtime: JavaRuntimeInfo) => {
   return `${distribution} / ${major}${runtime.arch ? ` / ${runtime.arch}` : ''}`;
 };
 
-const javaSourceLabels: Record<JavaRuntimeInfo['source'], string> = {
-  managed: 'ランチャー管理',
-  custom: '手動追加',
-  system: 'システム',
-  mojang: 'Mojang互換',
+const javaSourceLabelKeys: Record<
+  JavaRuntimeInfo['source'],
+  TranslationKey
+> = {
+  managed: 'java.source.managed',
+  custom: 'java.source.custom',
+  system: 'java.source.system',
+  mojang: 'java.source.mojang',
 };
 
 const renderJavaRuntimeList = () => {
@@ -1348,7 +1422,7 @@ const renderJavaRuntimeList = () => {
     const empty = document.createElement('p');
     empty.className = 'java-runtime-empty';
     empty.textContent =
-      'Javaが見つかりません。下の「インストール」から取得するか、手動で追加してください。';
+      t('java.notFound');
     javaRuntimeList.append(empty);
     return;
   }
@@ -1360,10 +1434,10 @@ const renderJavaRuntimeList = () => {
     const title = document.createElement('strong');
     title.textContent = describeJavaRuntime(runtime);
     const meta = document.createElement('small');
-    meta.textContent = `${javaSourceLabels[runtime.source]} / ${
+    meta.textContent = `${t(javaSourceLabelKeys[runtime.source])} / ${
       runtime.verified
-        ? runtime.versionString ?? '検証済み'
-        : `検証失敗: ${runtime.error ?? '不明'}`
+        ? runtime.versionString ?? t('java.verified')
+        : `${t('failure.verification')}: ${runtime.error ?? t('common.unknown')}`
     }`;
     const pathLine = document.createElement('small');
     pathLine.className = 'java-runtime-path';
@@ -1374,7 +1448,7 @@ const renderJavaRuntimeList = () => {
     if (runtime.source === 'managed' || runtime.source === 'custom') {
       const remove = document.createElement('md-text-button') as unknown as HTMLButtonElement;
       remove.dataset.javaRuntimeId = runtime.id;
-      remove.textContent = '削除';
+      remove.textContent = t('common.delete');
       row.append(remove);
     }
     javaRuntimeList.append(row);
@@ -1390,7 +1464,7 @@ const loadJavaRuntimes = async (refresh = false) => {
     showToast(
       error instanceof Error
         ? error.message
-        : 'Javaランタイム一覧を取得できませんでした。',
+        : t('java.listFailed'),
       true,
     );
   }
@@ -1409,7 +1483,7 @@ const updateProfileJavaStatus = () => {
     profileJavaStatus.hidden = false;
     profileJavaStatus.textContent = pendingCustomJavaPath
       ? `使用するJava: ${pendingCustomJavaPath}`
-      : 'Java実行ファイルが未選択です。';
+      : t('java.selectExecutable');
     return;
   }
   if (value.startsWith('fixed:')) {
@@ -1421,8 +1495,7 @@ const updateProfileJavaStatus = () => {
     return;
   }
   profileJavaStatus.hidden = false;
-  profileJavaStatus.textContent =
-    'Minecraftバージョンに応じて必要なJavaを自動選択・自動取得します。';
+  profileJavaStatus.textContent = t('java.autoDescription');
 };
 
 const javaSettingsToSelectValue = (java: ProfileJavaSettings) => {
@@ -1442,15 +1515,15 @@ const populateProfileJavaSelect = (java: ProfileJavaSettings) => {
     profileJavaSelect.append(option);
     return option;
   };
-  appendOption('auto', '自動（推奨: Eclipse Temurin by Adoptium）');
+  appendOption('auto', t('java.autoOption'));
   for (const runtime of javaRuntimes) {
     if (runtime.source === 'mojang' || !runtime.verified) continue;
     appendOption(
       `fixed:${runtime.id}`,
-      `${describeJavaRuntime(runtime)}（${javaSourceLabels[runtime.source]}）`,
+      `${describeJavaRuntime(runtime)} (${t(javaSourceLabelKeys[runtime.source])})`,
     );
   }
-  appendOption('custom', '手動選択...');
+  appendOption('custom', t('java.manualOption'));
 
   const value = javaSettingsToSelectValue(java);
   if (
@@ -1478,7 +1551,7 @@ const collectProfileJavaSettings = (): ProfileJavaSettings => {
     .filter(Boolean);
   if (value === 'custom') {
     if (!pendingCustomJavaPath) {
-      throw new Error('Java実行ファイルを選択してください。');
+      throw new Error(t('java.selectExecutable'));
     }
     return {
       ...defaults,
@@ -1515,8 +1588,8 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   if (!currentState) return;
   if (profileModalTitle) {
     profileModalTitle.textContent = profile
-      ? 'プロファイルを編集'
-      : 'プロファイルを作成';
+      ? t('profile.editTitle')
+      : t('profile.newTitle');
   }
   editingProfileId = profile?.id ?? '';
   if (profileNameInput) (profileNameInput as MdEl).value = profile?.name ?? '';
@@ -1557,13 +1630,12 @@ const openProfileEditor = (profile?: LaunchProfile) => {
   installedMods = [];
   if (profileForgeVersionSelect) {
     profileForgeVersionSelect.replaceChildren(
-      createSelectOption('MOD loader buildを選択してください', ''),
+      createSelectOption(t('profile.loaderRequired'), ''),
     );
     (profileForgeVersionSelect as MdEl).disabled = true;
   }
   if (profileForgeBuildStatus) {
-    profileForgeBuildStatus.textContent =
-      'MOD loader buildを選択してください。';
+    profileForgeBuildStatus.textContent = t('profile.loaderRequired');
   }
   const javaSettings = profile?.java ?? defaultJavaSettings();
   populateProfileJavaSelect(javaSettings);
@@ -1616,7 +1688,7 @@ const saveProfileEditor = async (close = true) => {
         (v) => v.id === minecraftVersion,
       );
       if (selectedVersion?.type === 'snapshot') {
-        showToast('Snapshot版は不安定な可能性があります。', false);
+      showToast(t('profile.snapshotWarning'), false);
       }
     }
     const state = await api.saveProfile({
@@ -1638,7 +1710,7 @@ const saveProfileEditor = async (close = true) => {
     editingProfileId = state.selectedProfileId;
     if (close) {
       closeProfileModal();
-      showToast('プロファイルを保存しました。');
+      showToast(t('profile.saved'));
     } else {
       await loadInstalledMods(state.selectedProfileId);
     }
@@ -1647,7 +1719,7 @@ const saveProfileEditor = async (close = true) => {
     showToast(
       error instanceof Error
         ? error.message
-        : 'プロファイルを保存できませんでした。',
+        : t('settings.saveFailed'),
       true,
     );
     return undefined;
@@ -1662,7 +1734,7 @@ const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
   if (projects.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'empty-mod-message';
-    empty.textContent = '対応するMODが見つかりませんでした。';
+    empty.textContent = t('mods.noResults');
     modSearchResults.append(empty);
     return;
   }
@@ -1690,13 +1762,13 @@ const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
     const description = document.createElement('p');
     description.textContent = project.description;
     const downloads = document.createElement('small');
-    downloads.textContent = `${project.downloads.toLocaleString()} downloads`;
+    downloads.textContent = `${new Intl.NumberFormat(currentLanguage).format(project.downloads)} downloads`;
     copy.append(title, description, downloads);
     const add = document.createElement('md-outlined-button') as unknown as HTMLButtonElement;
     add.dataset.project = JSON.stringify(project);
     const installed = installedIds.has(project.projectId);
     add.disabled = installed;
-    add.textContent = installed ? '追加済み' : 'ダウンロード';
+    add.textContent = installed ? t('profiles.installed') : t('mods.download');
     item.append(icon, copy, add);
     modSearchResults.append(item);
   }
@@ -1714,7 +1786,7 @@ const renderModSearchStatus = (message: string, retry = false) => {
       'md-outlined-button',
     ) as unknown as HTMLButtonElement;
     button.dataset.action = 'retry-popular';
-    button.textContent = '再試行';
+    button.textContent = t('common.retry');
     modSearchResults.append(button);
   }
 };
@@ -1734,7 +1806,7 @@ const loadPopularModsForCurrentInstance = async (
     renderModSearchResults(cached.projects);
     return;
   }
-  renderModSearchStatus('人気MODを読み込んでいます...');
+  renderModSearchStatus(t('mods.loadingPopular'));
   try {
     const projects = await api.modrinthSearchMods(profile.id, '');
     popularModsCache.set(cacheKey, {
@@ -1743,7 +1815,7 @@ const loadPopularModsForCurrentInstance = async (
     });
     renderModSearchResults(projects);
   } catch {
-    renderModSearchStatus('人気MODの取得に失敗しました', true);
+    renderModSearchStatus(t('mods.popularFailed'), true);
   }
 };
 
@@ -1758,7 +1830,7 @@ const handleProfileLaunch = async (profile: LaunchProfile) => {
   );
   statusBar?.removeAttribute('hidden');
   if (statusProfileName) statusProfileName.textContent = profile.name;
-  if (statusStage) statusStage.textContent = '準備中';
+  if (statusStage) statusStage.textContent = t('process.preparing');
 
   // Disable this card's launch button while running
   const card = profileGrid?.querySelector<HTMLElement>(
@@ -1766,7 +1838,7 @@ const handleProfileLaunch = async (profile: LaunchProfile) => {
   );
   if (card) {
     card.setAttribute('disabled', '');
-    card.textContent = '起動中...';
+    card.textContent = t('process.launching');
   }
   busy = true;
   try {
@@ -1779,7 +1851,7 @@ const handleProfileLaunch = async (profile: LaunchProfile) => {
     await refreshState();
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : '処理に失敗しました。',
+      error instanceof Error ? error.message : t('common.operationFailed'),
       true,
     );
   } finally {
@@ -1813,7 +1885,7 @@ profileGrid?.addEventListener('click', async (event) => {
       const result = await api.openInstanceFolder(profile.id);
       showToast(result.message, !result.ok);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'フォルダを開けませんでした。', true);
+      showToast(error instanceof Error ? error.message : t('common.openFolderFailed'), true);
     }
     return;
   }
@@ -1822,7 +1894,7 @@ profileGrid?.addEventListener('click', async (event) => {
       const result = await api.openInstanceLogs(profile.id);
       showToast(result.message, !result.ok);
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'ログフォルダを開けませんでした。', true);
+      showToast(error instanceof Error ? error.message : t('profiles.openLogsFailed'), true);
     }
     return;
   }
@@ -1832,7 +1904,7 @@ profileGrid?.addEventListener('click', async (event) => {
       showToast(result.message, !result.ok);
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : 'latest.logを開けませんでした。',
+        error instanceof Error ? error.message : t('profiles.openLatestLogFailed'),
         true,
       );
     }
@@ -1846,7 +1918,7 @@ profileGrid?.addEventListener('click', async (event) => {
       showToast(
         error instanceof Error
           ? error.message
-          : 'PowerShell再現スクリプトをコピーできませんでした。',
+          : t('profiles.copyReproFailed'),
         true,
       );
     }
@@ -1874,12 +1946,12 @@ deleteProfileButton?.addEventListener('click', async () => {
   try {
     renderState(await api.deleteProfile(id));
     closeProfileModal();
-    showToast('プロファイルを削除しました。');
+    showToast(t('profile.deleted'));
   } catch (error) {
     showToast(
       error instanceof Error
         ? error.message
-        : 'プロファイルを削除できませんでした。',
+        : t('profile.deleteFailed'),
       true,
     );
   } finally {
@@ -1943,11 +2015,11 @@ profileForgeVersionSelect?.addEventListener('change', () => {
 modSearchButton?.addEventListener('click', async () => {
   const loader = activeProfileLoader;
   if (!isModLoader(loader)) {
-    showToast('MODを追加するにはMODローダーを選択してください。', true);
+    showToast(t('mods.selectLoaderFirst'), true);
     return;
   }
   (modSearchButton as MdEl).disabled = true;
-  modSearchButton.textContent = '検索中...';
+  modSearchButton.textContent = t('mods.searching');
   try {
     const state = await saveProfileEditor(false);
     if (!state) return;
@@ -1964,12 +2036,12 @@ modSearchButton?.addEventListener('click', async () => {
     }
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : 'MODを検索できませんでした。',
+      error instanceof Error ? error.message : t('mods.searchFailed'),
       true,
     );
   } finally {
     (modSearchButton as MdEl).disabled = false;
-    modSearchButton.textContent = '検索';
+    modSearchButton.textContent = t('mods.search');
   }
 });
 
@@ -2016,21 +2088,21 @@ modSearchResults?.addEventListener('click', async (event) => {
       versions[0];
     if (!version) {
       throw new Error(
-        'このMinecraft版とMODローダーに対応するMODバージョンがありません。',
+        t('mods.noCompatibleVersion'),
       );
     }
     const result = await api.modrinthDownloadVersion(profileId, version.id);
     await loadInstalledMods(profileId);
-    button.textContent = '追加済み';
+    button.textContent = t('profiles.installed');
     showToast(
       result.alreadyPresent
         ? `${project.title}は既にインストール済みです。`
-        : `${project.title}をインスタンスのmodsへダウンロードしました。`,
+        : t('mods.downloaded', { name: project.title }),
     );
   } catch (error) {
     button.disabled = false;
     showToast(
-      error instanceof Error ? error.message : 'MODを追加できませんでした。',
+      error instanceof Error ? error.message : t('mods.addFailed'),
       true,
     );
   }
@@ -2050,7 +2122,7 @@ selectedModList?.addEventListener('click', async (event) => {
     await loadInstalledMods(profileId);
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : 'MODを削除できませんでした。',
+      error instanceof Error ? error.message : t('mods.removeFailed'),
       true,
     );
   }
@@ -2067,10 +2139,10 @@ refreshNav?.addEventListener('click', refreshState);
 changeFolderButton?.addEventListener('click', async () => {
   try {
     renderState(await api.chooseDirectory());
-    showToast('ゲームディレクトリを更新しました。');
+    showToast(t('settings.directoryUpdated'));
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : 'フォルダーを変更できませんでした。',
+      error instanceof Error ? error.message : t('settings.directoryChangeFailed'),
       true,
     );
   }
@@ -2092,6 +2164,10 @@ const saveLauncherSettings = async () => {
       (developerLogToggle as MdEl)?.selected ??
       currentState?.settings.showDeveloperLogs ??
       false,
+    language:
+      ((languageSelect as MdEl)?.value as LanguagePreference | undefined) ??
+      currentState?.settings.language ??
+      'system',
   });
   renderState(state);
   return state;
@@ -2101,14 +2177,37 @@ saveSettingsButton?.addEventListener('click', async () => {
   (saveSettingsButton as MdEl).disabled = true;
   try {
     await saveLauncherSettings();
-    showToast('設定を保存しました。');
+    showToast(t('settings.saved'));
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : '設定を保存できませんでした。',
+      error instanceof Error ? error.message : t('settings.saveFailed'),
       true,
     );
   } finally {
     (saveSettingsButton as MdEl).disabled = false;
+  }
+});
+
+languageSelect?.addEventListener('change', async () => {
+  if (!currentState) return;
+  const previous = currentState.settings.language;
+  const language = (languageSelect as MdEl).value as LanguagePreference;
+  renderState({
+    ...currentState,
+    settings: { ...currentState.settings, language },
+  });
+  try {
+    renderState(await api.saveSettings({ language }));
+    showToast(t('settings.saved'));
+  } catch (error) {
+    renderState({
+      ...currentState,
+      settings: { ...currentState.settings, language: previous },
+    });
+    showToast(
+      error instanceof Error ? error.message : t('settings.saveFailed'),
+      true,
+    );
   }
 });
 
@@ -2126,8 +2225,8 @@ const startDeviceCodeTimer = (expiresAt: number) => {
     if (deviceCodeExpiry) {
       deviceCodeExpiry.textContent =
         remaining > 0
-          ? `有効期限 ${minutes}:${seconds}`
-          : 'コードの有効期限が切れました';
+          ? t('auth.codeExpires', { time: `${minutes}:${seconds}` })
+          : t('auth.codeExpired');
     }
     if (remaining <= 0) {
       clearDeviceCodeTimer();
@@ -2143,7 +2242,7 @@ const renderAuthFlow = (flow: AuthFlowState) => {
 
   if (flow.status === 'requesting-code') {
     deviceCodePanel?.classList.remove('error');
-    if (deviceCode) deviceCode.textContent = '発行中...';
+    if (deviceCode) deviceCode.textContent = t('auth.requestingCode');
     if (deviceCodeUrl) deviceCodeUrl.textContent = flow.message;
     if (deviceCodeCopy) deviceCodeCopy.hidden = true;
     if (deviceCodeOpen) deviceCodeOpen.hidden = true;
@@ -2166,7 +2265,7 @@ const renderAuthFlow = (flow: AuthFlowState) => {
 
   if (flow.status === 'success') {
     clearDeviceCodeTimer();
-    if (deviceCode) deviceCode.textContent = '認証完了';
+    if (deviceCode) deviceCode.textContent = t('auth.complete');
     if (deviceCodeUrl) deviceCodeUrl.textContent = flow.message;
     if (deviceCodeCopy) deviceCodeCopy.hidden = true;
     if (deviceCodeOpen) deviceCodeOpen.hidden = true;
@@ -2179,7 +2278,9 @@ const renderAuthFlow = (flow: AuthFlowState) => {
     deviceCodePanel?.classList.add('error');
     if (deviceCode) {
       deviceCode.textContent =
-        flow.status === 'cancelled' ? '認証キャンセル' : '認証失敗';
+        flow.status === 'cancelled'
+          ? t('auth.cancelled')
+          : t('failure.authentication');
     }
     if (deviceCodeUrl) deviceCodeUrl.textContent = flow.message;
     if (deviceCodeCopy) deviceCodeCopy.hidden = true;
@@ -2190,15 +2291,15 @@ const renderAuthFlow = (flow: AuthFlowState) => {
 
 loginButton?.addEventListener('click', async () => {
   if (!currentState?.auth.configured) {
-    showToast('このビルドにはMicrosoft認証設定がありません。', true);
+    showToast(t('auth.notConfigured'), true);
     return;
   }
   (loginButton as MdEl).disabled = true;
-  loginButton.textContent = '認証を待っています...';
+  loginButton.textContent = t('auth.waiting');
   renderAuthFlow({
     status: 'requesting-code',
     deviceCode: null,
-    message: 'Microsoftへ接続しています。',
+    message: t('auth.connecting'),
   });
   try {
     const loginPromise = api.login();
@@ -2219,12 +2320,14 @@ loginButton?.addEventListener('click', async () => {
       renderAuth(auth);
     }
     showToast(
-      `${auth.profile?.name ?? 'Minecraftアカウント'}でログインしました。`,
+      t('auth.loginSuccess', {
+        name: auth.profile?.name ?? 'Minecraft account',
+      }),
     );
     closeSettingsModal();
   } catch (error) {
     const message =
-      error instanceof Error ? error.message : 'Microsoft認証に失敗しました。';
+      error instanceof Error ? error.message : t('auth.loginFailed');
     const flow = await api.getAuthFlowState();
     renderAuthFlow(
       flow.status === 'idle' || flow.status === 'requesting-code'
@@ -2253,10 +2356,10 @@ logoutButton?.addEventListener('click', async () => {
     renderAuth(auth);
     if (currentState) currentState.auth = auth;
     updateProfileCards();
-    showToast('ログアウトしました。');
+    showToast(t('auth.loggedOut'));
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : 'ログアウトできませんでした。',
+      error instanceof Error ? error.message : t('auth.logoutFailed'),
       true,
     );
   }
@@ -2287,12 +2390,12 @@ const showDeviceCode = (payload: Record<string, unknown>) => {
 
 deviceCodeCopy?.addEventListener('click', async () => {
   const code = deviceCode?.textContent?.trim();
-  if (!code || code === '発行中...' || code === 'コード発行失敗') return;
+  if (!code || code === t('auth.requestingCode')) return;
   try {
     await navigator.clipboard.writeText(code);
-    showToast('アクセス許可コードをコピーしました。');
+    showToast(t('auth.codeCopied'));
   } catch {
-    showToast('コードをコピーできませんでした。', true);
+    showToast(t('auth.copyCodeFailed'), true);
   }
 });
 
@@ -2301,7 +2404,7 @@ deviceCodeOpen?.addEventListener('click', async () => {
     await api.openVerification();
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : '認証ページを開けませんでした。',
+      error instanceof Error ? error.message : t('auth.openPageFailed'),
       true,
     );
   }
@@ -2312,7 +2415,7 @@ deviceCodeCancel?.addEventListener('click', async () => {
   renderAuthFlow({
     status: 'cancelled',
     deviceCode: null,
-    message: 'Microsoft認証をキャンセルしました。',
+    message: t('auth.cancelledToast'),
   });
 });
 
@@ -2329,7 +2432,7 @@ document.getElementById('snapshot-toggle')?.addEventListener('change', (event) =
 // --- Java runtime management events -------------------------------------------
 
 javaRefreshButton?.addEventListener('click', () => {
-  setJavaInstallStatus('Javaを再検出しています...');
+  setJavaInstallStatus(t('java.refreshing'));
   void loadJavaRuntimes(true).then(() => setJavaInstallStatus(''));
 });
 
@@ -2340,10 +2443,10 @@ javaAddCustomButton?.addEventListener('click', async () => {
     javaRuntimes = runtimes;
     javaRuntimesLoaded = true;
     renderJavaRuntimeList();
-    showToast('Javaランタイムを追加しました。');
+    showToast(t('java.added'));
   } catch (error) {
     showToast(
-      error instanceof Error ? error.message : 'Javaを追加できませんでした。',
+      error instanceof Error ? error.message : t('java.addFailed'),
       true,
     );
   }
@@ -2359,11 +2462,11 @@ javaRuntimeList?.addEventListener('click', async (event) => {
     javaRuntimes = await api.removeJavaRuntime(button.dataset.javaRuntimeId);
     javaRuntimesLoaded = true;
     renderJavaRuntimeList();
-    showToast('Javaランタイムを削除しました。');
+    showToast(t('java.removed'));
   } catch (error) {
     button.disabled = false;
     showToast(
-      error instanceof Error ? error.message : 'Javaを削除できませんでした。',
+      error instanceof Error ? error.message : t('java.removeFailed'),
       true,
     );
   }
@@ -2384,7 +2487,7 @@ profileJavaSelect?.addEventListener('change', async () => {
       showToast(
         error instanceof Error
           ? error.message
-          : 'Java実行ファイルを選択できませんでした。',
+          : t('java.selectFailed'),
         true,
       );
     }
@@ -2423,7 +2526,7 @@ developerLogToggle?.addEventListener('change', async () => {
     showToast(
       error instanceof Error
         ? error.message
-        : '開発者ログ設定を保存できませんでした。',
+        : t('settings.developerLogSaveFailed'),
       true,
     );
   }
@@ -2447,7 +2550,7 @@ api.onProgress((payload) => {
   statusBar?.removeAttribute('hidden');
   const percent = typeof payload.percent === 'number' ? payload.percent : 0;
   const message =
-    typeof payload.message === 'string' ? payload.message : '処理中...';
+    typeof payload.message === 'string' ? payload.message : t('process.working');
   const displayMessage = formatCategorizedMessage(message, payload.category);
   const file = typeof payload.file === 'string' ? payload.file : '';
   const stage = typeof payload.phase === 'string' ? payload.phase : '';
@@ -2488,9 +2591,9 @@ api.onProcessState((payload) => {
   if (message) {
     showToast(
       isCrash
-        ? `${formatCategorizedMessage(message, payload.category)} — 設定パネルのログで詳細を確認できます。`
+        ? `${formatCategorizedMessage(message, payload.category)} - ${t('process.checkLogs')}`
         : isWindowUnverified
-          ? `${formatCategorizedMessage(message, payload.category)} — インスタンス起動ログとlatest.logを確認してください。`
+          ? `${formatCategorizedMessage(message, payload.category)} - ${t('process.checkInstanceLogs')}`
         : formatCategorizedMessage(message, payload.category),
       isCrash,
     );

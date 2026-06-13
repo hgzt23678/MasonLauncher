@@ -3,8 +3,17 @@
 Mason Launcher is a clean, instance-based launcher for Minecraft: Java Edition.
 Electron、Vite、TypeScriptで構築された独立した非公式アプリケーションです。
 
+## 日本語に強いMinecraftランチャー
+
+Mason Launcherは日本語を第一言語として設計し、認証、Java管理、
+Minecraft起動診断、Modrinth連携まで自然な日本語で案内します。
+日本語環境では追加設定なしで日本語を使用でき、OSの言語設定に応じて
+英語、繁體中文、简体中文、한국어にも自動で切り替わります。
+表示言語は設定画面からいつでも明示的に変更できます。
+
 ## Features
 
+- 日本語を標準とした5言語対応とシステム言語の自動検出
 - Vanilla / Forgeプロファイルの作成と管理
 - プロファイルごとに分離されたゲームインスタンス
 - Mojang公式メタデータに基づくクライアント、ライブラリ、assetsの取得と検証

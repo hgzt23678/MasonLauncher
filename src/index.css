@@ -835,6 +835,15 @@ md-tabs {
 /* Settings section */
 .settings-section { margin-top: 18px; }
 
+.language-settings {
+  display: grid;
+  gap: 10px;
+}
+
+.language-settings md-filled-select {
+  width: min(100%, 360px);
+}
+
 .settings-caption {
   margin: 20px 0 0;
   color: #788273;
