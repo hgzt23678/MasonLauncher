@@ -229,6 +229,7 @@ type InstalledModRecord = {
 
 type LauncherState = {
   buildConfiguration: BuildConfiguration;
+  canShowDeveloperSettings: boolean;
   gameDirectory: string;
   directoryExists: boolean;
   versions: MinecraftVersion[];
@@ -241,6 +242,7 @@ type LauncherState = {
   settings: {
     minMemory: number;
     maxMemory: number;
+    developerMode: boolean;
     showDeveloperLogs: boolean;
     language: LanguagePreference;
     themeColor: string;
@@ -301,6 +303,7 @@ const formatCategorizedMessage = (
 
 const demoState: LauncherState = {
   buildConfiguration: 'debug',
+  canShowDeveloperSettings: true,
   gameDirectory: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft',
   directoryExists: true,
   versions: [{ id: '1.21.11', type: 'installed', releaseTime: null }],
@@ -354,6 +357,7 @@ const demoState: LauncherState = {
   settings: {
     minMemory: 1024,
     maxMemory: 4096,
+    developerMode: false,
     showDeveloperLogs: true,
     language: 'system',
     themeColor: DEFAULT_THEME_COLOR,
@@ -454,6 +458,7 @@ const demoAction = async (): Promise<ActionResult> => ({
 const previewParameters = new URLSearchParams(window.location.search);
 if (previewParameters.has('release')) {
   demoState.buildConfiguration = 'release';
+  demoState.canShowDeveloperSettings = demoState.settings.developerMode;
   demoState.settings.microsoftClientId = null;
 }
 if (previewParameters.has('signed-out')) {
@@ -495,6 +500,11 @@ const api = window.launcher ?? {
     }
     if (typeof settings.maxMemory === 'number') {
       demoState.settings.maxMemory = settings.maxMemory;
+    }
+    if (typeof settings.developerMode === 'boolean') {
+      demoState.settings.developerMode = settings.developerMode;
+      demoState.canShowDeveloperSettings =
+        demoState.buildConfiguration === 'debug' || settings.developerMode;
     }
     if (typeof settings.showDeveloperLogs === 'boolean') {
       demoState.settings.showDeveloperLogs = settings.showDeveloperLogs;
@@ -755,6 +765,10 @@ const deviceCodeCancel = byId<HTMLElement>('device-code-cancel');
 const deviceCodeExpiry = byId<HTMLElement>('device-code-expiry');
 const developerLogList = byId<HTMLElement>('developer-log-list');
 const developerLogSection = byId<HTMLElement>('developer-log-section');
+const developerLogPreferences = byId<HTMLElement>(
+  'developer-log-preferences',
+);
+const developerModeToggle = byId<HTMLElement>('developer-mode-toggle');
 const developerLogToggle = byId<HTMLElement>('developer-log-toggle');
 const refreshLogsButton = byId<HTMLElement>('refresh-logs-button');
 const clearLogsButton = byId<HTMLElement>('clear-logs-button');
@@ -822,7 +836,9 @@ const profileJvmArgsInput = byId<HTMLElement>('profile-jvm-args-input');
 
 let currentState: LauncherState | undefined;
 let busy = false;
+let modpackInstallActive = false;
 let toastTimer: number | undefined;
+let statusHideTimer: number | undefined;
 let deviceCodeTimer: number | undefined;
 let developerLogs: LauncherLogEntry[] = [];
 let modLoaderBuilds: ModLoaderBuild[] = [];
@@ -1041,6 +1057,31 @@ const showToast = (message: string, isError = false) => {
 const setLoading = (loading: boolean) => {
   refreshNav?.classList.toggle('spinning', loading);
   scanStatus?.classList.toggle('loading', loading);
+};
+
+const showStatusProgress = () => {
+  window.clearTimeout(statusHideTimer);
+  statusHideTimer = undefined;
+  statusBar?.removeAttribute('hidden');
+};
+
+const resetStatusProgress = (delay = 0) => {
+  window.clearTimeout(statusHideTimer);
+  const reset = () => {
+    if (statusProgress) (statusProgress as MdEl).value = 0;
+    if (statusPercent) statusPercent.textContent = '0%';
+    if (statusStage) statusStage.textContent = '';
+    if (statusMessage) statusMessage.textContent = '';
+    statusBar?.setAttribute('hidden', '');
+    statusHideTimer = undefined;
+  };
+  if (delay > 0) {
+    if (statusProgress) (statusProgress as MdEl).value = 0;
+    if (statusPercent) statusPercent.textContent = '0%';
+    statusHideTimer = window.setTimeout(reset, delay);
+  } else {
+    reset();
+  }
 };
 
 const openSettingsModal = () => {
@@ -1397,9 +1438,16 @@ const renderState = (state: LauncherState) => {
   if (languageSelect) {
     (languageSelect as MdEl).value = state.settings.language;
   }
-  const showDebugClientId = state.buildConfiguration === 'debug';
-  debugClientIdPanel?.toggleAttribute('hidden', !showDebugClientId);
-  developerSettings?.toggleAttribute('hidden', !showDebugClientId);
+  const canShowDeveloperSettings = state.canShowDeveloperSettings;
+  debugClientIdPanel?.toggleAttribute('hidden', !canShowDeveloperSettings);
+  developerSettings?.toggleAttribute('hidden', !canShowDeveloperSettings);
+  developerLogPreferences?.toggleAttribute(
+    'hidden',
+    !canShowDeveloperSettings,
+  );
+  if (developerModeToggle) {
+    (developerModeToggle as MdEl).selected = state.settings.developerMode;
+  }
   if (debugClientIdInput && document.activeElement !== debugClientIdInput) {
     (debugClientIdInput as MdEl).value =
       state.settings.microsoftClientId ?? '';
@@ -1417,7 +1465,9 @@ const renderState = (state: LauncherState) => {
   ) {
     (developerThemeColorInput as MdEl).value = themeColor;
   }
-  setDeveloperLogsVisible(state.settings.showDeveloperLogs);
+  setDeveloperLogsVisible(
+    canShowDeveloperSettings && state.settings.showDeveloperLogs,
+  );
   renderProfileGrid();
   if (modpackSearchResults) {
     renderModpackSearchResults(modpackSearchResults);
@@ -2239,6 +2289,7 @@ const handleProfileLaunch = async (profile: LaunchProfile) => {
       error instanceof Error ? error.message : t('common.operationFailed'),
       true,
     );
+    resetStatusProgress(3000);
   } finally {
     busy = false;
     updateProfileCards();
@@ -2344,9 +2395,16 @@ modpacksResults?.addEventListener('click', async (event) => {
     '[data-action="install-modpack"]',
   );
   const projectId = install?.dataset.projectId;
-  if (!install || !projectId) return;
+  if (!install || !projectId || modpackInstallActive) return;
+  modpackInstallActive = true;
+  showStatusProgress();
+  if (statusProgress) (statusProgress as MdEl).value = 0;
+  if (statusPercent) statusPercent.textContent = '0%';
+  if (statusStage) statusStage.textContent = 'archive';
+  if (statusMessage) statusMessage.textContent = t('modpacks.installing');
   (install as MdEl).disabled = true;
   install.textContent = t('modpacks.installing');
+  let installedSuccessfully = false;
   try {
     const result = await api.modrinthInstallModpack(
       projectId,
@@ -2354,17 +2412,26 @@ modpacksResults?.addEventListener('click', async (event) => {
     );
     renderState(result.state);
     install.textContent = t('profiles.installed');
+    installedSuccessfully = true;
     showToast(t('modpacks.installed', { name: result.profileName }));
     setMainView('profiles');
   } catch (error) {
-    (install as MdEl).disabled = false;
-    install.textContent = t('modpacks.install');
     showToast(
       error instanceof Error
         ? error.message
         : t('modpacks.installFailed'),
       true,
     );
+    resetStatusProgress(3000);
+  } finally {
+    modpackInstallActive = false;
+    if (!installedSuccessfully) {
+      (install as MdEl).disabled = false;
+      install.textContent = t('modpacks.install');
+    }
+    if (installedSuccessfully) {
+      resetStatusProgress();
+    }
   }
 });
 profileModalClose?.addEventListener('click', closeProfileModal);
@@ -2594,6 +2661,10 @@ const saveLauncherSettings = async () => {
   const state = await api.saveSettings({
     minMemory: Number((minMemoryInput as MdEl)?.value ?? 1024),
     maxMemory: Number((maxMemoryInput as MdEl)?.value ?? 4096),
+    developerMode:
+      (developerModeToggle as MdEl)?.selected ??
+      currentState?.settings.developerMode ??
+      false,
     showDeveloperLogs:
       (developerLogToggle as MdEl)?.selected ??
       currentState?.settings.showDeveloperLogs ??
@@ -2740,7 +2811,7 @@ const saveDebugClientId = async (
 ) => {
   if (
     !currentState ||
-    currentState.buildConfiguration !== 'debug' ||
+    !currentState.canShowDeveloperSettings ||
     !button
   ) {
     return;
@@ -2811,7 +2882,7 @@ developerThemeColorInput?.addEventListener('input', () => {
 });
 
 developerThemeColorSave?.addEventListener('click', async () => {
-  if (currentState?.buildConfiguration !== 'debug') return;
+  if (!currentState?.canShowDeveloperSettings) return;
   const value = String((developerThemeColorInput as MdEl)?.value ?? '').trim();
   if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
     setFieldStatus(
@@ -3061,6 +3132,22 @@ clearLogsButton?.addEventListener('click', async () => {
   renderDeveloperLogs(await api.clearLogs());
 });
 
+developerModeToggle?.addEventListener('change', async () => {
+  const enabled = (developerModeToggle as MdEl).selected;
+  try {
+    renderState(await api.saveSettings({ developerMode: enabled }));
+  } catch (error) {
+    if (developerModeToggle) {
+      (developerModeToggle as MdEl).selected =
+        currentState?.settings.developerMode ?? false;
+    }
+    showToast(
+      error instanceof Error ? error.message : t('settings.saveFailed'),
+      true,
+    );
+  }
+});
+
 developerLogToggle?.addEventListener('change', async () => {
   const visible = (developerLogToggle as MdEl).selected;
   setDeveloperLogsVisible(visible);
@@ -3097,7 +3184,7 @@ api.onLog((payload) => {
 });
 
 api.onProgress((payload) => {
-  statusBar?.removeAttribute('hidden');
+  showStatusProgress();
   const percent = typeof payload.percent === 'number' ? payload.percent : 0;
   const message =
     typeof payload.message === 'string' ? payload.message : t('process.working');
@@ -3112,16 +3199,21 @@ api.onProgress((payload) => {
       ? `${displayMessage} / ${file}`
       : displayMessage;
   }
-  if (payload.phase === 'error') {
+  if (
+    payload.phase === 'error' ||
+    payload.phase === 'cancelled' ||
+    payload.phase === 'canceled'
+  ) {
     showToast(displayMessage, true);
+    resetStatusProgress(3000);
   }
   if (payload.phase === 'complete') {
-    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
+    resetStatusProgress(3000);
   }
 });
 
 api.onModrinthModpackInstallProgress((payload) => {
-  statusBar?.removeAttribute('hidden');
+  showStatusProgress();
   const percent = typeof payload.percent === 'number' ? payload.percent : 0;
   const message =
     typeof payload.message === 'string'
@@ -3136,11 +3228,15 @@ api.onModrinthModpackInstallProgress((payload) => {
     statusMessage.textContent = file ? `${message} / ${file}` : message;
   }
   if (payload.phase === 'complete') {
-    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
+    resetStatusProgress(3000);
   }
-  if (payload.phase === 'error') {
+  if (
+    payload.phase === 'error' ||
+    payload.phase === 'cancelled' ||
+    payload.phase === 'canceled'
+  ) {
     showToast(message, true);
-    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
+    resetStatusProgress(3000);
   }
 });
 
@@ -3150,7 +3246,7 @@ api.onProcessState((payload) => {
     typeof payload.message === 'string' ? payload.message : '';
   if (currentState) currentState.gameRunning = running;
   updateProfileCards();
-  if (!running) statusBar?.setAttribute('hidden', '');
+  if (!running) resetStatusProgress();
   const isCrash =
     !running &&
     (payload.category === 'crash' ||

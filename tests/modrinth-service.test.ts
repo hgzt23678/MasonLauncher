@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -300,6 +300,9 @@ test('getProjectVersions が release を優先しつつ新しい順に並べる'
 test('.mrpackを検証して新規instanceへ展開する', async (t) => {
   const mod = Buffer.from('fabric mod');
   const skipped = Buffer.from('server only mod');
+  const nestedOverride = await buildZip({
+    'assets/mod-menu-helper.bin': randomBytes(72_000),
+  });
   const index = {
     formatVersion: 1,
     game: 'minecraft',
@@ -362,21 +365,43 @@ test('.mrpackを検証して新規instanceへ展開する', async (t) => {
   });
   index.files[0].downloads = [`${server.baseUrl}/download/example.jar`];
   index.files[1].downloads = [`${server.baseUrl}/download/server-only.jar`];
-  archive = await buildZip({
-    'modrinth.index.json': JSON.stringify(index),
+  const overrideEntries: Record<string, Buffer | string> = {
     'overrides/config/example.txt': 'base override',
     'client-overrides/config/example.txt': 'client override',
     'client-overrides/options.txt': 'fov:90',
+  };
+  for (let index = 0; index < 37; index += 1) {
+    overrideEntries[`overrides/config/generated-${index}.txt`] = `value-${index}`;
+  }
+  overrideEntries['overrides/resourcepacks/Mod Menu Helper.zip'] =
+    nestedOverride;
+  for (let index = 0; index < 5; index += 1) {
+    overrideEntries[`overrides/config/trailing-${index}.txt`] = `tail-${index}`;
+  }
+  archive = await buildZip({
+    'modrinth.index.json': JSON.stringify(index),
+    ...overrideEntries,
   });
   t.after(server.close);
 
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-mrpack-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
-  const result = await makeService(server.baseUrl).installModpack({
-    instanceDirectory: root,
-    projectId: 'pack-project',
-    versionId: 'pack-version',
-  });
+  const progress: Array<Record<string, unknown>> = [];
+  const sender = {
+    isDestroyed: () => false,
+    send: (channel: string, payload: Record<string, unknown>) => {
+      assert.equal(channel, 'modrinth:modpack-install-progress');
+      progress.push(payload);
+    },
+  };
+  const result = await makeService(server.baseUrl).installModpack(
+    {
+      instanceDirectory: root,
+      projectId: 'pack-project',
+      versionId: 'pack-version',
+    },
+    sender as never,
+  );
 
   assert.equal(result.name, 'Fabric Adventure');
   assert.equal(result.minecraftVersion, '1.20.1');
@@ -399,6 +424,36 @@ test('.mrpackを検証して新規instanceへ展開する', async (t) => {
     await fs.readFile(path.join(root, 'options.txt'), 'utf8'),
     'fov:90',
   );
+  assert.deepEqual(
+    await fs.readFile(
+      path.join(root, 'resourcepacks', 'Mod Menu Helper.zip'),
+    ),
+    nestedOverride,
+  );
+  assert.equal(result.overrideFiles, 46);
+  assert.equal(
+    (await fs.readdir(path.join(root, 'resourcepacks'))).some((name) =>
+      name.includes('.tmp-'),
+    ),
+    false,
+  );
+  assert.ok(
+    progress.some(
+      (entry) =>
+        entry.phase === 'overrides' &&
+        entry.percent === 99 &&
+        entry.overridesComplete === true,
+    ),
+  );
+  assert.ok(
+    progress.some(
+      (entry) =>
+        entry.phase === 'overrides' &&
+        entry.file === 'resourcepacks/Mod Menu Helper.zip' &&
+        entry.percent === 98,
+    ),
+  );
+  assert.ok(progress.some((entry) => entry.phase === 'profile'));
 });
 
 test('.mrpackのinstance外パスとQuilt依存を拒否する', async (t) => {

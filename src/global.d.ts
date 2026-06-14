@@ -107,6 +107,7 @@ type LaunchProfile = {
 
 type LauncherState = {
   buildConfiguration: import('./build-configuration').BuildConfiguration;
+  canShowDeveloperSettings: boolean;
   gameDirectory: string;
   directoryExists: boolean;
   versions: MinecraftVersion[];
@@ -123,6 +124,7 @@ type LauncherState = {
   settings: {
     minMemory: number;
     maxMemory: number;
+    developerMode: boolean;
     showDeveloperLogs: boolean;
     language: import('./i18n').LanguagePreference;
     themeColor: string;

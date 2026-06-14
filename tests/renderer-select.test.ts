@@ -40,7 +40,7 @@ test('developer logs append visible rows and defer hidden DOM updates', async ()
   );
 });
 
-test('Debug login screen exposes the Client ID configuration controls', async () => {
+test('Developer-capable login screen exposes the Client ID controls', async () => {
   const [html, mainSource] = await Promise.all([
     fs.readFile(path.resolve('index.html'), 'utf8'),
     fs.readFile(path.resolve('src', 'main.ts'), 'utf8'),
@@ -49,7 +49,7 @@ test('Debug login screen exposes the Client ID configuration controls', async ()
   assert.match(html, /id="debug-client-id-panel"\s+hidden/);
   assert.match(html, /id="debug-client-id-input"/);
   assert.match(html, /id="debug-client-id-save"/);
-  assert.match(mainSource, /if \(!canConfigureClientId\)/);
+  assert.match(mainSource, /if \(!canShowDeveloperSettings\(settings\)\)/);
   assert.match(mainSource, /auth:configure-client-id/);
 });
 
@@ -77,7 +77,7 @@ test('Login UI uses Material Web cards instead of custom card containers', async
   );
 });
 
-test('Debug developer settings expose Client ID and Material theme controls', async () => {
+test('Developer mode exposes Client ID and Material theme controls', async () => {
   const [html, rendererSource, mainSource, css] = await Promise.all([
     fs.readFile(path.resolve('index.html'), 'utf8'),
     fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
@@ -86,10 +86,15 @@ test('Debug developer settings expose Client ID and Material theme controls', as
   ]);
 
   assert.match(html, /id="developer-settings"/);
+  assert.match(html, /id="developer-mode-toggle"/);
   assert.match(html, /id="developer-client-id-input"/);
   assert.match(html, /id="developer-theme-color-input"/);
   assert.match(rendererSource, /createMaterialThemeTokens/);
-  assert.match(rendererSource, /state\.buildConfiguration === 'debug'/);
+  assert.match(rendererSource, /state\.canShowDeveloperSettings/);
+  assert.match(
+    mainSource,
+    /clientIdConfigurationEnabled\(buildConfiguration\) \|\| settings\.developerMode/,
+  );
   assert.match(
     mainSource,
     /modCount:\s*await countEntries\(profileModsDirectory,\s*'file'\)/,
@@ -163,11 +168,37 @@ test('ModPack discovery uses Material search, filled cards, and chips', async ()
   assert.match(preloadSource, /modrinthInstallModpack/);
   assert.match(preloadSource, /modrinth:install-modpack/);
   assert.match(mainSource, /modrinth:install-modpack/);
+  assert.match(
+    mainSource,
+    /phase:\s*terminalPhase[\s\S]*done:\s*true/,
+  );
+  assert.match(rendererSource, /finally\s*\{[\s\S]*modpackInstallActive = false/);
+  assert.match(rendererSource, /resetStatusProgress\(3000\)/);
   assert.match(css, /\.modpacks-search-surface\s*\{/);
   assert.match(css, /\.modpacks-collection-header\s*\{/);
   assert.match(
     css,
     /\.modpacks-search-row\s*\{[^}]*align-items:\s*center/s,
+  );
+  assert.match(
+    css,
+    /\.modpacks-search-row\s*\{[^}]*box-sizing:\s*border-box[^}]*width:\s*100%[^}]*max-width:\s*100%[^}]*overflow:\s*hidden/s,
+  );
+  assert.match(
+    css,
+    /\.modpacks-search-field\s*\{[^}]*flex:\s*1 1 auto[^}]*min-width:\s*0[^}]*width:\s*auto/s,
+  );
+  assert.match(
+    css,
+    /\.modpacks-search-row\s*\{[^}]*height:\s*64px[^}]*max-height:\s*64px[^}]*resize:\s*none/s,
+  );
+  assert.match(
+    css,
+    /\.modpacks-search-field\s*\{[^}]*height:\s*56px[^}]*max-height:\s*56px[^}]*resize:\s*none/s,
+  );
+  assert.doesNotMatch(
+    html,
+    /id="modpacks-search-input"[\s\S]{0,220}data-i18n-label=/,
   );
   assert.match(css, /\.mod-search-row\s*\{[^}]*align-items:\s*center/s);
 });
