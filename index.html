@@ -26,25 +26,27 @@
         aria-hidden="true"
       />
       <div class="login-screen-scrim" aria-hidden="true"></div>
-      <section class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-screen-title">
-        <div class="brand-mark login-brand" aria-hidden="true">
-          <span></span><span></span><span></span><span></span>
-        </div>
-        <p class="card-kicker">STANDALONE LAUNCHER</p>
+      <md-filled-card class="login-card" role="dialog" aria-modal="true" aria-labelledby="login-screen-title">
+        <md-assist-chip
+          class="login-product-chip"
+          label="Standalone launcher"
+          data-i18n-label="login.productLabel"
+          soft-disabled
+        ></md-assist-chip>
         <h1 id="login-screen-title">Mason Launcher</h1>
         <p class="login-screen-lead" id="login-screen-status" data-i18n="login.lead">
           Microsoft アカウントでログインして、Minecraft を始めましょう。
         </p>
 
-        <md-filled-button id="login-button" type="button" class="microsoft-button login-screen-button">
+        <md-filled-button id="login-button" type="button" class="login-screen-button">
           <span data-i18n="login.button">Microsoft でログイン</span>
         </md-filled-button>
 
-        <section class="debug-client-id-panel" id="debug-client-id-panel" hidden>
-          <div class="debug-client-id-heading">
+        <md-outlined-card class="debug-client-id-panel" id="debug-client-id-panel" hidden>
+          <header class="material-card-heading">
             <strong data-i18n="login.clientIdTitle">Debug: Microsoft Entra Client ID</strong>
-            <span>DEBUG</span>
-          </div>
+            <md-assist-chip label="Debug" soft-disabled></md-assist-chip>
+          </header>
           <p data-i18n="login.clientIdDescription">
             開発用のApplication (client) IDを設定ファイルへ保存します。
           </p>
@@ -59,20 +61,21 @@
             <span data-i18n="login.clientIdSave">Client IDを保存</span>
           </md-filled-button>
           <small id="debug-client-id-status" aria-live="polite"></small>
-        </section>
+        </md-outlined-card>
 
-        <div class="device-code-panel" id="device-code-panel" hidden>
+        <md-outlined-card class="device-code-panel" id="device-code-panel" hidden>
           <p data-i18n="login.deviceInstruction">次のページを開き、表示されたコードを入力してください。</p>
           <strong id="device-code">--------</strong>
           <small id="device-code-url">https://microsoft.com/devicelogin</small>
           <span class="device-code-expiry" id="device-code-expiry"></span>
+          <md-divider></md-divider>
           <div class="device-code-actions">
             <md-outlined-button id="device-code-copy" type="button" hidden><span data-i18n="login.copyCode">コードをコピー</span></md-outlined-button>
             <md-outlined-button id="device-code-open" type="button" hidden><span data-i18n="login.openPage">ログインページを開く</span></md-outlined-button>
-            <md-text-button id="device-code-cancel" type="button" hidden class="cancel-btn"><span data-i18n="common.cancel">キャンセル</span></md-text-button>
+            <md-text-button id="device-code-cancel" type="button" hidden><span data-i18n="common.cancel">キャンセル</span></md-text-button>
           </div>
-        </div>
-      </section>
+        </md-outlined-card>
+      </md-filled-card>
     </div>
 
     <div class="app-shell">

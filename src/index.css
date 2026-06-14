@@ -546,10 +546,6 @@ md-text-button {
   --md-text-button-label-text-size: 12px;
 }
 
-md-text-button.cancel-btn {
-  --md-text-button-label-text-color: #e3a79b;
-}
-
 md-text-button.danger-text-btn {
   --md-text-button-label-text-color: #e3a79b;
 }
@@ -867,10 +863,10 @@ md-tabs {
   margin-top: 18px;
   padding: 16px;
   color: #b7c5ae;
-  border: 1px solid #4b663e;
-  border-radius: 4px;
-  background: #1a2717;
   text-align: center;
+  --md-outlined-card-container-color: #1a2717;
+  --md-outlined-card-container-shape: 12px;
+  --md-outlined-card-outline-color: #4b663e;
 }
 
 .device-code-panel[hidden] { display: none; }
@@ -895,6 +891,11 @@ md-tabs {
 
 .device-code-expiry { margin-top: 7px; font-size: 9px; color: #7d8977; }
 
+.device-code-panel md-divider {
+  margin-top: 12px;
+  --md-divider-color: #3b4d34;
+}
+
 .device-code-actions {
   display: flex;
   flex-wrap: wrap;
@@ -908,8 +909,8 @@ md-tabs {
 
 .device-code-panel.error {
   color: #ecc8c0;
-  border-color: #714036;
-  background: #2b1b17;
+  --md-outlined-card-outline-color: #714036;
+  --md-outlined-card-container-color: #2b1b17;
 }
 
 .device-code-panel.error strong,
@@ -992,13 +993,6 @@ md-tabs {
 .developer-log-row.error p { color: #e3a79b; }
 .developer-log-row pre { grid-column: 2 / -1; margin: 0; overflow-wrap: anywhere; color: #667360; white-space: pre-wrap; }
 .developer-log-empty { margin: 12px 0 2px; color: #687563; font-size: 9px; text-align: center; }
-
-/* Login button */
-.microsoft-button {
-  width: 100%;
-  margin-top: 18px;
-  --md-filled-button-container-shape: 4px;
-}
 
 /* ─── Profile Editor Modal ─── */
 .profile-editor { width: min(720px, 100%); }
@@ -1238,7 +1232,8 @@ md-text-button[data-java-runtime-id] {
   display: grid;
   place-items: center;
   padding: 32px;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   /* Fallback when no background image is supplied. */
   background:
     radial-gradient(circle at 28% 18%, rgb(83 124 51 / 28%), transparent 38rem),
@@ -1272,16 +1267,15 @@ body.login-active .app-shell { visibility: hidden; }
   position: relative;
   z-index: 1;
   width: min(420px, 100%);
-  display: flex;
-  flex-direction: column;
   align-items: center;
   text-align: center;
   gap: 14px;
   padding: 40px 34px;
-  border: 1px solid #43523e;
-  border-radius: 12px;
-  background: rgb(17 23 16 / 92%);
-  box-shadow: 0 24px 60px rgb(0 0 0 / 55%);
+  margin: auto 0;
+  --md-filled-card-container-color: rgb(17 23 16 / 94%);
+  --md-filled-card-container-elevation: 3;
+  --md-filled-card-container-shadow-color: #000;
+  --md-filled-card-container-shape: 20px;
 }
 
 .login-card h1 {
@@ -1290,7 +1284,15 @@ body.login-active .app-shell { visibility: hidden; }
   letter-spacing: 0.01em;
 }
 
-.login-brand { margin-bottom: 4px; }
+.login-product-chip {
+  --md-assist-chip-container-shape: 8px;
+  --md-assist-chip-label-text-color: var(--md-sys-color-primary);
+  --md-assist-chip-outline-color: var(--md-sys-color-outline);
+  --md-assist-chip-disabled-label-text-color: var(--md-sys-color-primary);
+  --md-assist-chip-disabled-label-text-opacity: 1;
+  --md-assist-chip-disabled-outline-color: var(--md-sys-color-outline);
+  --md-assist-chip-disabled-outline-opacity: 1;
+}
 
 .login-screen-lead {
   margin: 0;
@@ -1306,37 +1308,36 @@ body.login-active .app-shell { visibility: hidden; }
 }
 
 .debug-client-id-panel {
-  display: grid;
   gap: 10px;
   width: 100%;
-  padding: 12px;
-  border: 1px solid #4e613f;
-  background: rgb(15 23 14 / 88%);
-  box-sizing: border-box;
+  padding: 16px;
+  --md-outlined-card-container-color: var(--md-sys-color-surface-container);
+  --md-outlined-card-container-shape: 12px;
+  --md-outlined-card-outline-color: var(--md-sys-color-outline);
 }
 
 .debug-client-id-panel[hidden] {
   display: none;
 }
 
-.debug-client-id-heading {
+.material-card-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.debug-client-id-heading strong {
+.material-card-heading strong {
   color: #d9e8cf;
   font-size: 11px;
 }
 
-.debug-client-id-heading span {
-  padding: 2px 6px;
-  color: #10170e;
-  background: #a8d18c;
-  font: 700 9px/1.4 Consolas, "Courier New", monospace;
-  letter-spacing: 0.1em;
+.material-card-heading md-assist-chip {
+  --md-assist-chip-container-height: 24px;
+  --md-assist-chip-container-shape: 8px;
+  --md-assist-chip-label-text-size: 9px;
+  --md-assist-chip-label-text-color: var(--md-sys-color-primary);
+  --md-assist-chip-outline-color: var(--md-sys-color-outline);
 }
 
 .debug-client-id-panel p,
@@ -1359,4 +1360,18 @@ body.login-active .app-shell { visibility: hidden; }
 .login-card .device-code-panel {
   width: 100%;
   margin-top: 8px;
+  box-sizing: border-box;
+}
+
+@media (max-width: 600px), (max-height: 640px) {
+  .login-screen {
+    place-items: start center;
+    padding: 16px;
+  }
+
+  .login-card {
+    width: 100%;
+    padding: 28px 20px;
+    --md-filled-card-container-shape: 16px;
+  }
 }

@@ -32,6 +32,7 @@ const messages = {
   'login.deviceInstruction': { ja: '次のページを開き、表示されたコードを入力してください。', en: 'Open the following page and enter the displayed code.', zhHant: '開啟下列頁面並輸入顯示的代碼。', zhHans: '打开以下页面并输入显示的代码。', ko: '다음 페이지를 열고 표시된 코드를 입력하세요.' },
   'login.copyCode': { ja: 'コードをコピー', en: 'Copy code', zhHant: '複製代碼', zhHans: '复制代码', ko: '코드 복사' },
   'login.openPage': { ja: 'ログインページを開く', en: 'Open sign-in page', zhHant: '開啟登入頁面', zhHans: '打开登录页面', ko: '로그인 페이지 열기' },
+  'login.productLabel': { ja: 'スタンドアロンランチャー', en: 'Standalone launcher', zhHant: '獨立啟動器', zhHans: '独立启动器', ko: '독립 실행형 런처' },
   'login.clientIdTitle': { ja: 'Debug: Microsoft Entra Client ID', en: 'Debug: Microsoft Entra Client ID', zhHant: 'Debug：Microsoft Entra 用戶端識別碼', zhHans: 'Debug：Microsoft Entra 客户端 ID', ko: 'Debug: Microsoft Entra 클라이언트 ID' },
   'login.clientIdDescription': { ja: '開発用のApplication (client) IDを設定ファイルへ保存します。', en: 'Save the Application (client) ID used for development to the settings file.', zhHant: '將開發用的應用程式（用戶端）識別碼儲存至設定檔。', zhHans: '将开发用的应用程序（客户端）ID 保存到设置文件。', ko: '개발용 애플리케이션(클라이언트) ID를 설정 파일에 저장합니다.' },
   'login.clientIdLabel': { ja: 'Application (client) ID', en: 'Application (client) ID', zhHant: '應用程式（用戶端）識別碼', zhHans: '应用程序（客户端）ID', ko: '애플리케이션(클라이언트) ID' },
