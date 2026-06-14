@@ -24,6 +24,7 @@ import {
 import { isMicrosoftClientId } from './auth-config';
 import type { BuildConfiguration } from './build-configuration';
 import {
+  DEFAULT_THEME_COLOR,
   createMaterialThemeTokens,
   normalizeThemeColor,
 } from './theme';
@@ -355,7 +356,7 @@ const demoState: LauncherState = {
     maxMemory: 4096,
     showDeveloperLogs: true,
     language: 'system',
-    themeColor: '#9bd36f',
+    themeColor: DEFAULT_THEME_COLOR,
     microsoftClientId: '00000000-0000-0000-0000-000000000001',
   },
   profiles: [
@@ -953,10 +954,15 @@ const setDeveloperLogsVisible = (visible: boolean) => {
   developerLogSection?.toggleAttribute('hidden', !visible);
 };
 
+const preferredColorScheme = window.matchMedia('(prefers-color-scheme: dark)');
+
 const applyThemeColor = (value: unknown) => {
   const normalized = normalizeThemeColor(value);
   for (const [name, color] of Object.entries(
-    createMaterialThemeTokens(normalized),
+    createMaterialThemeTokens(
+      normalized,
+      preferredColorScheme.matches ? 'dark' : 'light',
+    ),
   )) {
     document.documentElement.style.setProperty(name, color);
   }
@@ -965,6 +971,10 @@ const applyThemeColor = (value: unknown) => {
   }
   return normalized;
 };
+
+preferredColorScheme.addEventListener('change', () => {
+  applyThemeColor(currentState?.settings.themeColor);
+});
 
 const showToast = (message: string, isError = false) => {
   if (!toast) {

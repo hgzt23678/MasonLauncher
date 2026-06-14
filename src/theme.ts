@@ -1,4 +1,7 @@
-export const DEFAULT_THEME_COLOR = '#9bd36f';
+export const DEFAULT_THEME_COLOR = '#0b57d0';
+const LEGACY_DEFAULT_THEME_COLOR = '#9bd36f';
+
+export type ThemeColorScheme = 'light' | 'dark';
 
 type Rgb = {
   red: number;
@@ -44,28 +47,61 @@ export const normalizeThemeColor = (value: unknown): string => {
   if (typeof value !== 'string') return DEFAULT_THEME_COLOR;
   const normalized = value.trim().toLowerCase();
   const withHash = normalized.startsWith('#') ? normalized : `#${normalized}`;
-  return /^#[0-9a-f]{6}$/.test(withHash)
-    ? withHash
-    : DEFAULT_THEME_COLOR;
+  if (!/^#[0-9a-f]{6}$/.test(withHash)) return DEFAULT_THEME_COLOR;
+  return withHash === LEGACY_DEFAULT_THEME_COLOR
+    ? DEFAULT_THEME_COLOR
+    : withHash;
 };
 
-export const createMaterialThemeTokens = (value: unknown) => {
+const googleBlueTokens = {
+  light: {
+    '--md-sys-color-primary': '#0b57d0',
+    '--md-sys-color-on-primary': '#ffffff',
+    '--md-sys-color-primary-container': '#d3e3fd',
+    '--md-sys-color-on-primary-container': '#041e49',
+    '--md-sys-color-inverse-primary': '#a8c7fa',
+  },
+  dark: {
+    '--md-sys-color-primary': '#a8c7fa',
+    '--md-sys-color-on-primary': '#062e6f',
+    '--md-sys-color-primary-container': '#0842a0',
+    '--md-sys-color-on-primary-container': '#d3e3fd',
+    '--md-sys-color-inverse-primary': '#0b57d0',
+  },
+} as const;
+
+export const createMaterialThemeTokens = (
+  value: unknown,
+  scheme: ThemeColorScheme = 'light',
+) => {
   const primary = normalizeThemeColor(value);
+  if (primary === DEFAULT_THEME_COLOR) {
+    return googleBlueTokens[scheme];
+  }
+
   const rgb = parseHex(primary);
+  const white = { red: 255, green: 255, blue: 255 };
+  const nearBlack = { red: 31, green: 31, blue: 31 };
+  const displayedPrimary =
+    scheme === 'dark' ? toHex(mix(rgb, white, 0.58)) : primary;
+  const displayedRgb = parseHex(displayedPrimary);
   const onPrimary =
-    relativeLuminance(rgb) > 0.48 ? '#0c2005' : '#ffffff';
-  const container = toHex(mix(rgb, { red: 13, green: 17, blue: 13 }, 0.62));
-  const onContainer = toHex(
-    mix(rgb, { red: 255, green: 255, blue: 255 }, 0.62),
-  );
+    relativeLuminance(displayedRgb) > 0.48 ? '#1f1f1f' : '#ffffff';
+  const container =
+    scheme === 'dark'
+      ? toHex(mix(rgb, nearBlack, 0.28))
+      : toHex(mix(rgb, white, 0.82));
+  const onContainer =
+    scheme === 'dark'
+      ? toHex(mix(rgb, white, 0.82))
+      : toHex(mix(rgb, nearBlack, 0.72));
 
   return {
-    '--md-sys-color-primary': primary,
+    '--md-sys-color-primary': displayedPrimary,
     '--md-sys-color-on-primary': onPrimary,
     '--md-sys-color-primary-container': container,
     '--md-sys-color-on-primary-container': onContainer,
-    '--md-sys-color-inverse-primary': toHex(
-      mix(rgb, { red: 0, green: 0, blue: 0 }, 0.35),
-    ),
+    '--md-sys-color-inverse-primary':
+      scheme === 'dark' ? primary : toHex(mix(rgb, white, 0.58)),
   } as const;
 };

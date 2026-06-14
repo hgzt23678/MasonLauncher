@@ -90,3 +90,23 @@ test('ModPack navigation opens a dedicated Modrinth search view', async () => {
   assert.match(preloadSource, /modrinth:search-modpacks/);
   assert.match(mainSource, /modrinth:search-modpacks/);
 });
+
+test('Material 3 color roles and motion tokens define accessible light and dark themes', async () => {
+  const [html, css] = await Promise.all([
+    fs.readFile(path.resolve('index.html'), 'utf8'),
+    fs.readFile(path.resolve('src', 'index.css'), 'utf8'),
+  ]);
+
+  assert.match(html, /name="color-scheme"\s+content="light dark"/);
+  assert.match(css, /--md-sys-color-primary:\s*#0b57d0/);
+  assert.match(css, /--md-sys-color-surface-container:\s*#f0f4f9/);
+  assert.match(css, /@media\s*\(prefers-color-scheme:\s*dark\)/);
+  assert.match(css, /--md-sys-color-primary:\s*#a8c7fa/);
+  assert.match(
+    css,
+    /--md-sys-motion-easing-emphasized-decelerate:\s*cubic-bezier\(0\.05,\s*0\.7,\s*0\.1,\s*1\)/,
+  );
+  assert.match(css, /--md-sys-motion-duration-medium2:\s*300ms/);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.doesNotMatch(css, /#9bd36f/i);
+});
