@@ -40,6 +40,27 @@
           <span data-i18n="login.button">Microsoft でログイン</span>
         </md-filled-button>
 
+        <section class="debug-client-id-panel" id="debug-client-id-panel" hidden>
+          <div class="debug-client-id-heading">
+            <strong data-i18n="login.clientIdTitle">Debug: Microsoft Entra Client ID</strong>
+            <span>DEBUG</span>
+          </div>
+          <p data-i18n="login.clientIdDescription">
+            開発用のApplication (client) IDを設定ファイルへ保存します。
+          </p>
+          <md-outlined-text-field
+            id="debug-client-id-input"
+            label="Application (client) ID"
+            data-i18n-label="login.clientIdLabel"
+            autocomplete="off"
+            spellcheck="false"
+          ></md-outlined-text-field>
+          <md-filled-button id="debug-client-id-save" type="button">
+            <span data-i18n="login.clientIdSave">Client IDを保存</span>
+          </md-filled-button>
+          <small id="debug-client-id-status" aria-live="polite"></small>
+        </section>
+
         <div class="device-code-panel" id="device-code-panel" hidden>
           <p data-i18n="login.deviceInstruction">次のページを開き、表示されたコードを入力してください。</p>
           <strong id="device-code">--------</strong>

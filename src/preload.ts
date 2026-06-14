@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('launcher:copy-reproduction-script', profileId),
   saveSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('launcher:save-settings', settings),
+  configureMicrosoftClientId: (clientId: string) =>
+    ipcRenderer.invoke('auth:configure-client-id', clientId),
   saveProfile: (profile: Record<string, unknown>) =>
     ipcRenderer.invoke('profile:save', profile),
   getForgeBuilds: (minecraftVersion: string) =>

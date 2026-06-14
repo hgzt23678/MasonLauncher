@@ -1305,6 +1305,57 @@ body.login-active .app-shell { visibility: hidden; }
   width: 100%;
 }
 
+.debug-client-id-panel {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #4e613f;
+  background: rgb(15 23 14 / 88%);
+  box-sizing: border-box;
+}
+
+.debug-client-id-panel[hidden] {
+  display: none;
+}
+
+.debug-client-id-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.debug-client-id-heading strong {
+  color: #d9e8cf;
+  font-size: 11px;
+}
+
+.debug-client-id-heading span {
+  padding: 2px 6px;
+  color: #10170e;
+  background: #a8d18c;
+  font: 700 9px/1.4 Consolas, "Courier New", monospace;
+  letter-spacing: 0.1em;
+}
+
+.debug-client-id-panel p,
+.debug-client-id-panel small {
+  margin: 0;
+  color: #9eae96;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.debug-client-id-panel md-outlined-text-field,
+.debug-client-id-panel md-filled-button {
+  width: 100%;
+}
+
+.debug-client-id-panel small.error {
+  color: #ef9a8d;
+}
+
 .login-card .device-code-panel {
   width: 100%;
   margin-top: 8px;

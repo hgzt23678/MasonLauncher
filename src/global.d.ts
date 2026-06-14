@@ -105,6 +105,7 @@ type LaunchProfile = {
 };
 
 type LauncherState = {
+  buildConfiguration: import('./build-configuration').BuildConfiguration;
   gameDirectory: string;
   directoryExists: boolean;
   versions: MinecraftVersion[];
@@ -123,6 +124,7 @@ type LauncherState = {
     maxMemory: number;
     showDeveloperLogs: boolean;
     language: import('./i18n').LanguagePreference;
+    microsoftClientId: string | null;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -278,6 +280,9 @@ declare global {
       copyReproductionScript: (profileId: string) => Promise<ActionResult>;
       saveSettings: (
         settings: Record<string, unknown>,
+      ) => Promise<LauncherState>;
+      configureMicrosoftClientId: (
+        clientId: string,
       ) => Promise<LauncherState>;
       saveProfile: (
         profile: Record<string, unknown>,

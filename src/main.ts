@@ -14,10 +14,14 @@ import {
 import type { IpcMainInvokeEvent } from 'electron';
 import started from 'electron-squirrel-startup';
 import { Version } from '@xmcl/core';
-import { resolveMicrosoftClientId } from './auth-config';
+import {
+  isMicrosoftClientId,
+  resolveMicrosoftClientId,
+} from './auth-config';
 import { classifyAuthFailure } from './auth-errors';
 import { AuthService } from './auth-service';
 import {
+  clientIdConfigurationEnabled,
   developerLogsVisibleByDefault,
   normalizeBuildConfiguration,
 } from './build-configuration';
@@ -93,6 +97,7 @@ const buildConfiguration = normalizeBuildConfiguration(
   __BUILD_CONFIGURATION__,
 );
 const isReleaseBuild = buildConfiguration === 'release';
+const canConfigureClientId = clientIdConfigurationEnabled(buildConfiguration);
 const diagnostics = new LauncherDiagnostics((entry) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('launcher:log', entry);
@@ -898,6 +903,7 @@ const getLauncherState = async () => {
   }
 
   return {
+    buildConfiguration,
     gameDirectory: settings.gameDirectory,
     directoryExists,
     versions: installedVersions
@@ -914,6 +920,9 @@ const getLauncherState = async () => {
       maxMemory: settings.maxMemory,
       showDeveloperLogs: settings.showDeveloperLogs,
       language: settings.language,
+      microsoftClientId: canConfigureClientId
+        ? settings.microsoftClientId
+        : null,
     },
     profiles: settings.profiles,
     selectedProfileId: settings.selectedProfileId,
@@ -1063,6 +1072,31 @@ const registerIpcHandlers = () => {
     await writeSettings(settings);
     return getLauncherState();
   });
+
+  trustedIpc.handle(
+    'auth:configure-client-id',
+    async (_event, input: unknown) => {
+      if (!canConfigureClientId) {
+        throw new Error(
+          'Microsoft Client IDはDebugビルドからのみ変更できます。',
+        );
+      }
+      const clientId = typeof input === 'string' ? input.trim() : '';
+      if (!isMicrosoftClientId(clientId)) {
+        throw new Error(
+          'Microsoft Entraのアプリケーション（クライアント）IDをGUID形式で入力してください。',
+        );
+      }
+      const settings = await readSettings();
+      await authService.configure(clientId);
+      settings.microsoftClientId = clientId;
+      await writeSettings(settings);
+      log('info', 'auth:microsoft', 'Debug UIからClient IDを更新しました。', {
+        configured: true,
+      });
+      return getLauncherState();
+    },
+  );
 
   trustedIpc.handle('profile:save', async (_event, input: unknown) => {
     const settings = await readSettings();

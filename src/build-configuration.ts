@@ -9,3 +9,6 @@ export const normalizeBuildConfiguration = (
 
 export const developerLogsVisibleByDefault = (value: unknown): boolean =>
   normalizeBuildConfiguration(value) === 'debug';
+
+export const clientIdConfigurationEnabled = (value: unknown): boolean =>
+  normalizeBuildConfiguration(value) === 'debug';

@@ -16,6 +16,8 @@ import {
   filterSelectableVersions,
   formatVersionLabel,
 } from './renderer-logic';
+import { isMicrosoftClientId } from './auth-config';
+import type { BuildConfiguration } from './build-configuration';
 import {
   resolveLanguage,
   translate,
@@ -215,6 +217,7 @@ type InstalledModRecord = {
 };
 
 type LauncherState = {
+  buildConfiguration: BuildConfiguration;
   gameDirectory: string;
   directoryExists: boolean;
   versions: MinecraftVersion[];
@@ -229,6 +232,7 @@ type LauncherState = {
     maxMemory: number;
     showDeveloperLogs: boolean;
     language: LanguagePreference;
+    microsoftClientId: string | null;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -284,6 +288,7 @@ const formatCategorizedMessage = (
 };
 
 const demoState: LauncherState = {
+  buildConfiguration: 'debug',
   gameDirectory: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft',
   directoryExists: true,
   versions: [{ id: '1.21.11', type: 'installed', releaseTime: null }],
@@ -339,6 +344,7 @@ const demoState: LauncherState = {
     maxMemory: 4096,
     showDeveloperLogs: true,
     language: 'system',
+    microsoftClientId: '00000000-0000-0000-0000-000000000001',
   },
   profiles: [
     {
@@ -397,6 +403,19 @@ const demoAction = async (): Promise<ActionResult> => ({
 });
 
 const previewParameters = new URLSearchParams(window.location.search);
+if (previewParameters.has('release')) {
+  demoState.buildConfiguration = 'release';
+  demoState.settings.microsoftClientId = null;
+}
+if (previewParameters.has('signed-out')) {
+  demoState.auth.signedIn = false;
+  demoState.auth.profile = null;
+  demoState.auth.offline.allowed = false;
+}
+if (previewParameters.has('client-id-missing')) {
+  demoState.auth.configured = false;
+  demoState.settings.microsoftClientId = '';
+}
 const previewAuthError =
   'Minecraft Services がこのApp IDを拒否しました。\n' +
   '原因: Application ID が Minecraft API 利用許可を受けていません。\n' +
@@ -434,6 +453,11 @@ const api = window.launcher ?? {
     if (typeof settings.language === 'string') {
       demoState.settings.language = settings.language as LanguagePreference;
     }
+    return demoState;
+  },
+  configureMicrosoftClientId: async (clientId: string) => {
+    demoState.settings.microsoftClientId = clientId;
+    demoState.auth.configured = isMicrosoftClientId(clientId);
     return demoState;
   },
   saveProfile: async () => demoState,
@@ -611,6 +635,10 @@ const accountLabel = byId<HTMLElement>('account-label');
 const loginScreen = byId<HTMLElement>('login-screen');
 const loginScreenBg = byId<HTMLImageElement>('login-screen-bg');
 const loginScreenStatus = byId<HTMLElement>('login-screen-status');
+const debugClientIdPanel = byId<HTMLElement>('debug-client-id-panel');
+const debugClientIdInput = byId<HTMLElement>('debug-client-id-input');
+const debugClientIdSave = byId<HTMLElement>('debug-client-id-save');
+const debugClientIdStatus = byId<HTMLElement>('debug-client-id-status');
 const profileGrid = byId<HTMLElement>('profile-grid');
 const profilesSection = byId<HTMLElement>('profiles-section');
 const addProfileButton = byId<HTMLElement>('add-profile-button');
@@ -871,7 +899,9 @@ const selectedProfile = () =>
 // configured Client ID cannot log in at all, so they bypass the gate (login
 // stays optional, matching the documented "auth disabled" build).
 const hasLauncherAccess = (auth: AuthState) =>
-  auth.signedIn || auth.offline.allowed || !auth.configured;
+  auth.signedIn ||
+  auth.offline.allowed ||
+  (!auth.configured && currentState?.buildConfiguration !== 'debug');
 
 const showLoginScreen = () => {
   loginScreen?.removeAttribute('hidden');
@@ -1192,6 +1222,12 @@ const renderState = (state: LauncherState) => {
   }
   if (languageSelect) {
     (languageSelect as MdEl).value = state.settings.language;
+  }
+  const showDebugClientId = state.buildConfiguration === 'debug';
+  debugClientIdPanel?.toggleAttribute('hidden', !showDebugClientId);
+  if (debugClientIdInput && document.activeElement !== debugClientIdInput) {
+    (debugClientIdInput as MdEl).value =
+      state.settings.microsoftClientId ?? '';
   }
   setDeveloperLogsVisible(state.settings.showDeveloperLogs);
   renderProfileGrid();
@@ -2288,6 +2324,50 @@ const renderAuthFlow = (flow: AuthFlowState) => {
     if (deviceCodeCancel) deviceCodeCancel.hidden = true;
   }
 };
+
+const setDebugClientIdStatus = (message: string, isError = false) => {
+  if (!debugClientIdStatus) return;
+  debugClientIdStatus.textContent = message;
+  debugClientIdStatus.classList.toggle('error', isError);
+};
+
+const saveDebugClientId = async () => {
+  if (
+    !currentState ||
+    currentState.buildConfiguration !== 'debug' ||
+    !debugClientIdSave
+  ) {
+    return;
+  }
+  const clientId = String((debugClientIdInput as MdEl)?.value ?? '').trim();
+  if (!isMicrosoftClientId(clientId)) {
+    setDebugClientIdStatus(t('login.clientIdInvalid'), true);
+    return;
+  }
+  (debugClientIdSave as MdEl).disabled = true;
+  setDebugClientIdStatus('');
+  try {
+    renderState(await api.configureMicrosoftClientId(clientId));
+    setDebugClientIdStatus(t('login.clientIdSaved'));
+  } catch (error) {
+    setDebugClientIdStatus(
+      error instanceof Error ? error.message : t('settings.saveFailed'),
+      true,
+    );
+  } finally {
+    (debugClientIdSave as MdEl).disabled = false;
+  }
+};
+
+debugClientIdSave?.addEventListener('click', () => {
+  void saveDebugClientId();
+});
+
+debugClientIdInput?.addEventListener('keydown', (event) => {
+  if ((event as KeyboardEvent).key === 'Enter') {
+    void saveDebugClientId();
+  }
+});
 
 loginButton?.addEventListener('click', async () => {
   if (!currentState?.auth.configured) {

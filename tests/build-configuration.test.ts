@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  clientIdConfigurationEnabled,
   developerLogsVisibleByDefault,
   normalizeBuildConfiguration,
 } from '../src/build-configuration';
@@ -19,4 +20,9 @@ test('uses debug as the safe fallback configuration', () => {
 test('developer logs default on only in debug builds', () => {
   assert.equal(developerLogsVisibleByDefault('debug'), true);
   assert.equal(developerLogsVisibleByDefault('release'), false);
+});
+
+test('Client ID configuration is available only in debug builds', () => {
+  assert.equal(clientIdConfigurationEnabled('debug'), true);
+  assert.equal(clientIdConfigurationEnabled('release'), false);
 });

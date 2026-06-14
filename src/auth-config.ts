@@ -1,3 +1,9 @@
+const microsoftClientIdPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const isMicrosoftClientId = (value: unknown): value is string =>
+  typeof value === 'string' && microsoftClientIdPattern.test(value.trim());
+
 export const resolveMicrosoftClientId = (
   configuredClientId: unknown,
   embeddedClientId: string,
