@@ -32,7 +32,6 @@ jobs:
 
     env:
       MASON_BUILD_CONFIGURATION: release
-      NODE_ENV: production
 
     steps:
       - name: Checkout
@@ -49,13 +48,15 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes rpm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --include=dev
 
       - name: Check
         run: npm run check
 
       - name: Build distributables
         run: npx electron-forge make -a ${{ matrix.arch }}
+        env:
+          NODE_ENV: production
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
