@@ -446,6 +446,11 @@ h2.profiles-title {
   --md-outlined-text-field-container-color: var(--md-sys-color-surface-container-lowest);
 }
 
+.modpacks-search-row md-filled-button {
+  --md-filled-button-container-height: 56px;
+  align-self: center;
+}
+
 .modpacks-search-field svg,
 .modpacks-search-row md-filled-button svg {
   width: 20px;
@@ -579,6 +584,16 @@ h2.profiles-title {
   --md-assist-chip-disabled-outline-opacity: 1;
 }
 
+.modpack-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+}
+
+.modpack-card-actions md-filled-button {
+  min-width: 112px;
+}
+
 .modpacks-empty {
   grid-column: 1 / -1;
   margin: 32px 0;
@@ -643,11 +658,13 @@ h2.profiles-title {
   }
 
   .modpacks-results,
-  .modpacks-search-row {
+  .modpacks-search-row,
+  .mod-search-row {
     grid-template-columns: 1fr;
   }
 
-  .modpacks-search-row md-filled-button {
+  .modpacks-search-row md-filled-button,
+  .mod-search-row md-outlined-button {
     width: 100%;
   }
 }
@@ -1589,13 +1606,29 @@ md-tabs {
 .profile-mods-heading > span { color: var(--md-sys-color-primary); font-family: Consolas, "Courier New", monospace; font-size: 9px; }
 
 .mod-search-row {
-  display: flex;
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 8px;
   margin-top: 14px;
 }
 
-.mod-search-row md-outlined-text-field { flex: 1; }
+.mod-search-row md-outlined-text-field { width: 100%; }
+
+.mod-search-row md-outlined-button {
+  --md-outlined-button-container-height: 56px;
+  align-self: center;
+}
+
+@media (max-width: 640px) {
+  .mod-search-row {
+    grid-template-columns: 1fr;
+  }
+
+  .mod-search-row md-outlined-button {
+    width: 100%;
+  }
+}
 
 .selected-mod-list, .mod-search-results { display: grid; gap: 7px; margin-top: 12px; }
 

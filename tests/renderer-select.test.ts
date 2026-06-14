@@ -117,10 +117,12 @@ test('Settings is a Material 3 destination instead of a blocking dialog', async 
 });
 
 test('ModPack discovery uses Material search, filled cards, and chips', async () => {
-  const [html, rendererSource, css] = await Promise.all([
+  const [html, rendererSource, css, preloadSource, mainSource] = await Promise.all([
     fs.readFile(path.resolve('index.html'), 'utf8'),
     fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
     fs.readFile(path.resolve('src', 'index.css'), 'utf8'),
+    fs.readFile(path.resolve('src', 'preload.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'main.ts'), 'utf8'),
   ]);
 
   assert.match(html, /class="modpacks-search-surface"/);
@@ -129,8 +131,17 @@ test('ModPack discovery uses Material search, filled cards, and chips', async ()
   assert.match(html, /id="modpacks-result-count"/);
   assert.match(rendererSource, /document\.createElement\('md-filled-card'\)/);
   assert.match(rendererSource, /document\.createElement\('md-assist-chip'\)/);
+  assert.match(rendererSource, /dataset\.action\s*=\s*'install-modpack'/);
+  assert.match(preloadSource, /modrinthInstallModpack/);
+  assert.match(preloadSource, /modrinth:install-modpack/);
+  assert.match(mainSource, /modrinth:install-modpack/);
   assert.match(css, /\.modpacks-search-surface\s*\{/);
   assert.match(css, /\.modpacks-collection-header\s*\{/);
+  assert.match(
+    css,
+    /\.modpacks-search-row\s*\{[^}]*align-items:\s*center/s,
+  );
+  assert.match(css, /\.mod-search-row\s*\{[^}]*align-items:\s*center/s);
 });
 
 test('Material 3 color roles and motion tokens define accessible light and dark themes', async () => {

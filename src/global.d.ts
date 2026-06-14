@@ -245,6 +245,12 @@ type DownloadVersionResult = {
   embeddedDependencies: ModrinthDependency[];
 };
 
+type ModpackInstallIpcResult = {
+  profileId: string;
+  profileName: string;
+  state: LauncherState;
+};
+
 type ModrinthSearchOptions = {
   loader?: ModrinthLoader;
   gameVersion?: string;
@@ -351,6 +357,10 @@ declare global {
         query: string,
         options?: Pick<ModrinthSearchOptions, 'limit' | 'offset'>,
       ) => Promise<ModrinthSearchHit[]>;
+      modrinthInstallModpack: (
+        projectId: string,
+        versionId?: string,
+      ) => Promise<ModpackInstallIpcResult>;
       modrinthGetProject: (
         idOrSlug: string,
       ) => Promise<ModrinthProjectDetail>;
@@ -391,6 +401,9 @@ declare global {
       ) => () => void;
       onLog: (callback: (payload: LauncherEvent) => void) => () => void;
       onModrinthDownloadProgress: (
+        callback: (payload: LauncherEvent) => void,
+      ) => () => void;
+      onModrinthModpackInstallProgress: (
         callback: (payload: LauncherEvent) => void,
       ) => () => void;
     };

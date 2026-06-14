@@ -95,6 +95,7 @@ let authService: AuthService;
 let minecraftService: MinecraftService;
 let javaRuntimeService: JavaRuntimeService;
 let launchWorkflowInProgress = false;
+let modpackInstallInProgress = false;
 const buildConfiguration = normalizeBuildConfiguration(
   __BUILD_CONFIGURATION__,
 );
@@ -1437,6 +1438,123 @@ const registerIpcHandlers = () => {
         limit: options.limit,
         offset: options.offset,
       });
+    },
+  );
+
+  trustedIpc.handle(
+    'modrinth:install-modpack',
+    async (
+      event,
+      projectIdInput: unknown,
+      versionIdInput: unknown,
+    ) => {
+      if (
+        typeof projectIdInput !== 'string' ||
+        !projectIdInput.trim() ||
+        (versionIdInput !== undefined &&
+          versionIdInput !== null &&
+          typeof versionIdInput !== 'string')
+      ) {
+        throw new Error('Modpackのプロジェクトまたはバージョン指定が不正です。');
+      }
+      if (
+        launchWorkflowInProgress ||
+        minecraftService.isRunning() ||
+        modpackInstallInProgress
+      ) {
+        throw new Error(
+          'Minecraft の起動処理中、または別のModpackのインストール中です。',
+        );
+      }
+      const projectId = projectIdInput.trim();
+      const versionId =
+        typeof versionIdInput === 'string' && versionIdInput.trim()
+          ? versionIdInput.trim()
+          : undefined;
+      const profileId = randomUUID();
+      let instanceDirectory: string | undefined;
+      let profilePersisted = false;
+      modpackInstallInProgress = true;
+      try {
+        instanceDirectory = await ensureManagedInstanceDirectory(
+          managedInstancesRoot(),
+          profileId,
+        );
+        const installed = await modrinthService.installModpack(
+          {
+            instanceDirectory,
+            projectId,
+            versionId,
+          },
+          event.sender,
+        );
+        const settings = await readSettings();
+        const loader = installed.loader;
+        if (loader !== 'vanilla' && !installed.loaderVersion) {
+          throw new Error(
+            `Modpackの${loader}バージョンを解決できませんでした。`,
+          );
+        }
+        const resolvedVersionId =
+          loader === 'vanilla'
+            ? installed.minecraftVersion
+            : resolvedModLoaderVersionId(
+                loader,
+                installed.minecraftVersion,
+                installed.loaderVersion as string,
+              );
+        const profile: LaunchProfile = {
+          id: profileId,
+          name: installed.name.slice(0, 40),
+          profileType: loader,
+          loaderType: loader,
+          minecraftVersion: installed.minecraftVersion,
+          loaderVersion: installed.loaderVersion,
+          resolvedVersionId,
+          versionId: installed.minecraftVersion,
+          loader,
+          minMemory: settings.minMemory,
+          maxMemory: settings.maxMemory,
+          mods: [],
+          java: normalizeJavaSettings(undefined),
+          instanceDir: defaultInstanceDir(profileId),
+        };
+        settings.profiles.push(profile);
+        settings.selectedProfileId = profile.id;
+        await writeSettings(settings);
+        profilePersisted = true;
+        return {
+          profileId,
+          profileName: profile.name,
+          state: await getLauncherState(),
+        };
+      } catch (error) {
+        if (instanceDirectory && !profilePersisted) {
+          await fs
+            .rm(path.dirname(instanceDirectory), {
+              recursive: true,
+              force: true,
+            })
+            .catch((): void => undefined);
+        }
+        if (!event.sender.isDestroyed()) {
+          event.sender.send('modrinth:modpack-install-progress', {
+            projectId,
+            versionId: versionId ?? null,
+            phase: 'error',
+            percent: 0,
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
+        log('error', 'mods', 'Modrinth Modpackのインストールに失敗しました。', {
+          projectId,
+          versionId: versionId ?? null,
+          message: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      } finally {
+        modpackInstallInProgress = false;
+      }
     },
   );
 

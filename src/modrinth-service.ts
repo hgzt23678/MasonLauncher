@@ -3,6 +3,12 @@ import { createWriteStream, promises as fs } from 'node:fs';
 import { once } from 'node:events';
 import path from 'node:path';
 import { Readable } from 'node:stream';
+import {
+  open,
+  openEntryReadStream,
+  readEntry,
+  walkEntriesGenerator,
+} from '@xmcl/unzip';
 import type { WebContents } from 'electron';
 import type {
   LauncherLogLevel,
@@ -15,7 +21,15 @@ const defaultApiBase = 'https://api.modrinth.com/v2';
 const defaultUserAgent =
   'hgzt23678/MasonLauncher/1.4.1 (https://github.com/hgzt23678)';
 const defaultMaxDownloadBytes = 512 * 1024 * 1024;
-const defaultDownloadHosts = ['cdn.modrinth.com', 'api.modrinth.com'];
+const defaultDownloadHosts = [
+  'cdn.modrinth.com',
+  'api.modrinth.com',
+  'github.com',
+  'raw.githubusercontent.com',
+  'objects.githubusercontent.com',
+  'gitlab.com',
+];
+const maxModpackIndexBytes = 2 * 1024 * 1024;
 
 type LogWriter = (
   level: LauncherLogLevel,
@@ -126,6 +140,19 @@ export type DownloadVersionResult = {
   embeddedDependencies: ModrinthDependency[];
 };
 
+export type ModpackInstallResult = {
+  projectId: string;
+  versionId: string;
+  name: string;
+  summary: string | null;
+  minecraftVersion: string;
+  loader: 'vanilla' | 'forge' | 'neoforge' | 'fabric';
+  loaderVersion: string | null;
+  installedFiles: number;
+  skippedFiles: number;
+  overrideFiles: number;
+};
+
 export type ModrinthErrorKind =
   | 'invalid-input'
   | 'network'
@@ -139,7 +166,9 @@ export type ModrinthErrorKind =
   | 'download-failed'
   | 'hash-mismatch'
   | 'write-permission'
-  | 'file-conflict';
+  | 'file-conflict'
+  | 'invalid-modpack'
+  | 'unsupported-loader';
 
 export class ModrinthError extends Error {
   constructor(
@@ -244,6 +273,32 @@ type RawModrinthProject = {
   server_side?: string;
   loaders?: string[];
   game_versions?: string[];
+};
+
+type ModpackEnvironment = 'required' | 'optional' | 'unsupported';
+
+type ModpackIndexFile = {
+  path: string;
+  hashes: {
+    sha1: string;
+    sha512: string;
+  };
+  env?: {
+    client?: ModpackEnvironment;
+    server?: ModpackEnvironment;
+  };
+  downloads: string[];
+  fileSize: number;
+};
+
+type ModpackIndex = {
+  formatVersion: number;
+  game: string;
+  versionId: string;
+  name: string;
+  summary?: string;
+  files: ModpackIndexFile[];
+  dependencies: Record<string, string>;
 };
 
 type ResolvedMod = {
@@ -885,6 +940,465 @@ export class ModrinthService {
       return actual.sha512 === file.sha512;
     }
     return false;
+  }
+
+  private safeInstanceFilePath(instanceDirectory: string, relativePath: string) {
+    if (
+      !relativePath ||
+      relativePath.includes('\0') ||
+      path.isAbsolute(relativePath) ||
+      path.win32.isAbsolute(relativePath) ||
+      /^[a-zA-Z]:/u.test(relativePath) ||
+      relativePath.startsWith('/') ||
+      relativePath.startsWith('\\') ||
+      relativePath.split(/[\\/]/u).some((part) => part === '..')
+    ) {
+      throw new ModrinthError(
+        `Modpack contains an unsafe instance path: ${relativePath}`,
+        'invalid-input',
+        { path: relativePath },
+      );
+    }
+    const root = path.resolve(instanceDirectory);
+    const destination = path.resolve(root, relativePath);
+    const relative = path.relative(root, destination);
+    if (
+      relative === '' ||
+      relative === '..' ||
+      relative.startsWith(`..${path.sep}`) ||
+      path.isAbsolute(relative)
+    ) {
+      throw new ModrinthError(
+        `Modpack path escapes the instance directory: ${relativePath}`,
+        'invalid-input',
+        { path: relativePath },
+      );
+    }
+    return destination;
+  }
+
+  private selectModpackFile(version: ModrinthVersionInfo) {
+    const files = version.files.filter((file) =>
+      file.filename.toLowerCase().endsWith('.mrpack'),
+    );
+    const file = files.find((candidate) => candidate.primary) ?? files[0];
+    if (!file) {
+      throw new ModrinthError(
+        'このModpackバージョンに.mrpackファイルがありません。',
+        'no-files',
+        { versionId: version.id },
+      );
+    }
+    if (
+      file.size <= 0 ||
+      !/^[a-f0-9]{40}$/iu.test(file.sha1 ?? '') ||
+      !/^[a-f0-9]{128}$/iu.test(file.sha512 ?? '')
+    ) {
+      throw new ModrinthError(
+        '.mrpackのsize、SHA-1、SHA-512メタデータが不足しています。',
+        'invalid-modpack',
+        { versionId: version.id, fileName: file.filename },
+      );
+    }
+    return file;
+  }
+
+  private validateModpackIndex(value: unknown): ModpackIndex {
+    if (!value || typeof value !== 'object') {
+      throw new ModrinthError(
+        'modrinth.index.jsonのルートが不正です。',
+        'invalid-modpack',
+      );
+    }
+    const index = value as Partial<ModpackIndex>;
+    if (
+      index.formatVersion !== 1 ||
+      index.game !== 'minecraft' ||
+      typeof index.versionId !== 'string' ||
+      !index.versionId.trim() ||
+      typeof index.name !== 'string' ||
+      !index.name.trim() ||
+      !Array.isArray(index.files) ||
+      !index.dependencies ||
+      typeof index.dependencies !== 'object' ||
+      !Object.values(index.dependencies).every(
+        (dependency) =>
+          typeof dependency === 'string' && Boolean(dependency.trim()),
+      )
+    ) {
+      throw new ModrinthError(
+        'modrinth.index.jsonに必要なフィールドがありません。',
+        'invalid-modpack',
+      );
+    }
+    for (const file of index.files) {
+      if (
+        !file ||
+        typeof file.path !== 'string' ||
+        !Array.isArray(file.downloads) ||
+        file.downloads.length === 0 ||
+        !file.downloads.every((url) => typeof url === 'string') ||
+        !file.hashes ||
+        !/^[a-f0-9]{40}$/iu.test(file.hashes.sha1 ?? '') ||
+        !/^[a-f0-9]{128}$/iu.test(file.hashes.sha512 ?? '') ||
+        (file.env?.client !== undefined &&
+          file.env.client !== 'required' &&
+          file.env.client !== 'optional' &&
+          file.env.client !== 'unsupported') ||
+        !Number.isSafeInteger(file.fileSize) ||
+        file.fileSize <= 0
+      ) {
+        throw new ModrinthError(
+          'modrinth.index.jsonのfilesエントリが不正です。',
+          'invalid-modpack',
+          { path: file?.path },
+        );
+      }
+      this.safeInstanceFilePath('.', file.path);
+      for (const url of file.downloads) {
+        this.validateDownloadUrl(url);
+      }
+    }
+    return index as ModpackIndex;
+  }
+
+  private async readModpackIndex(archivePath: string) {
+    const zip = await open(archivePath, {
+      lazyEntries: true,
+      autoClose: false,
+    });
+    try {
+      for await (const entry of walkEntriesGenerator(zip)) {
+        if (entry.fileName.replaceAll('\\', '/') !== 'modrinth.index.json') {
+          continue;
+        }
+        if (entry.uncompressedSize > maxModpackIndexBytes) {
+          throw new ModrinthError(
+            'modrinth.index.jsonが許容サイズを超えています。',
+            'invalid-modpack',
+            { size: entry.uncompressedSize },
+          );
+        }
+        const contents = await readEntry(zip, entry);
+        try {
+          return this.validateModpackIndex(
+            JSON.parse(contents.toString('utf8')) as unknown,
+          );
+        } catch (error) {
+          if (error instanceof ModrinthError) throw error;
+          throw new ModrinthError(
+            'modrinth.index.jsonを解析できませんでした。',
+            'invalid-modpack',
+            undefined,
+            { cause: error },
+          );
+        }
+      }
+    } finally {
+      zip.close();
+    }
+    throw new ModrinthError(
+      '.mrpackのルートにmodrinth.index.jsonがありません。',
+      'invalid-modpack',
+    );
+  }
+
+  private resolveModpackLoader(index: ModpackIndex) {
+    const dependencies = index.dependencies;
+    const minecraftVersion = dependencies.minecraft?.trim();
+    if (!minecraftVersion) {
+      throw new ModrinthError(
+        'ModpackにMinecraftバージョンが指定されていません。',
+        'invalid-modpack',
+      );
+    }
+    if (dependencies['quilt-loader']) {
+      throw new ModrinthError(
+        'Quilt LoaderのModpackは現在サポートしていません。',
+        'unsupported-loader',
+        { loader: 'quilt' },
+      );
+    }
+    const loaders = [
+      ['forge', dependencies.forge],
+      ['neoforge', dependencies.neoforge],
+      ['fabric', dependencies['fabric-loader']],
+    ].filter((entry): entry is [string, string] => Boolean(entry[1]?.trim()));
+    if (loaders.length > 1) {
+      throw new ModrinthError(
+        '複数のMODローダーを指定したModpackはインストールできません。',
+        'invalid-modpack',
+        { loaders: loaders.map(([loader]) => loader) },
+      );
+    }
+    const [loader = 'vanilla', loaderVersion = null] = loaders[0] ?? [];
+    return {
+      minecraftVersion,
+      loader: loader as ModpackInstallResult['loader'],
+      loaderVersion,
+    };
+  }
+
+  private sendModpackProgress(
+    sender: WebContents | undefined,
+    payload: Record<string, unknown>,
+  ) {
+    if (sender && !sender.isDestroyed()) {
+      sender.send('modrinth:modpack-install-progress', payload);
+    }
+  }
+
+  private async downloadModpackFile(
+    file: ModpackIndexFile,
+    destination: string,
+    onProgress?: (received: number, total: number) => void,
+  ) {
+    let lastError: unknown;
+    for (const url of file.downloads) {
+      try {
+        return await this.downloadToFile(
+          {
+            url,
+            filename: path.basename(file.path),
+            primary: true,
+            size: file.fileSize,
+            sha1: file.hashes.sha1,
+            sha512: file.hashes.sha512,
+          },
+          destination,
+          onProgress,
+        );
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw lastError instanceof Error
+      ? lastError
+      : new ModrinthError(
+          `Modpackファイルをダウンロードできませんでした: ${file.path}`,
+          'download-failed',
+        );
+  }
+
+  private async writeArchiveEntry(
+    zip: Awaited<ReturnType<typeof open>>,
+    entry: Parameters<typeof openEntryReadStream>[1],
+    destination: string,
+  ) {
+    if (entry.uncompressedSize > this.maxDownloadBytes) {
+      throw new ModrinthError(
+        'Overrideファイルが許容サイズを超えています。',
+        'invalid-modpack',
+        { entry: entry.fileName, size: entry.uncompressedSize },
+      );
+    }
+    await fs.mkdir(path.dirname(destination), { recursive: true });
+    const temporary = `${destination}.tmp-${randomUUID()}`;
+    const output = createWriteStream(temporary, { flags: 'wx' });
+    let received = 0;
+    try {
+      const input = await openEntryReadStream(zip, entry);
+      for await (const value of input) {
+        const chunk = Buffer.from(value as Uint8Array);
+        received += chunk.length;
+        if (received > this.maxDownloadBytes) {
+          throw new ModrinthError(
+            'Overrideファイルが許容サイズを超えています。',
+            'invalid-modpack',
+            { entry: entry.fileName, received },
+          );
+        }
+        if (!output.write(chunk)) await once(output, 'drain');
+      }
+      const closed = once(output, 'close');
+      output.end();
+      await closed;
+      if (received !== entry.uncompressedSize) {
+        throw new ModrinthError(
+          'Overrideファイルの展開サイズが一致しません。',
+          'invalid-modpack',
+          {
+            entry: entry.fileName,
+            expected: entry.uncompressedSize,
+            actual: received,
+          },
+        );
+      }
+      await fs.rm(destination, { force: true });
+      await fs.rename(temporary, destination);
+    } catch (error) {
+      output.destroy();
+      await fs.rm(temporary, { force: true }).catch((): void => undefined);
+      throw error;
+    }
+  }
+
+  private async applyOverrideLayer(
+    archivePath: string,
+    instanceDirectory: string,
+    prefix: 'overrides/' | 'client-overrides/',
+  ) {
+    const zip = await open(archivePath, {
+      lazyEntries: true,
+      autoClose: false,
+    });
+    let copied = 0;
+    try {
+      for await (const entry of walkEntriesGenerator(zip)) {
+        const normalized = entry.fileName.replaceAll('\\', '/');
+        if (!normalized.startsWith(prefix) || normalized.endsWith('/')) {
+          continue;
+        }
+        const relative = normalized.slice(prefix.length);
+        const destination = this.safeInstanceFilePath(
+          instanceDirectory,
+          relative,
+        );
+        await this.writeArchiveEntry(zip, entry, destination);
+        copied += 1;
+      }
+    } finally {
+      zip.close();
+    }
+    return copied;
+  }
+
+  async installModpack(
+    params: {
+      instanceDirectory: string;
+      projectId: string;
+      versionId?: string;
+    },
+    sender?: WebContents,
+  ): Promise<ModpackInstallResult> {
+    const projectId = params.projectId.trim();
+    if (!projectId) {
+      throw new ModrinthError(
+        'ModpackプロジェクトIDを指定してください。',
+        'invalid-input',
+      );
+    }
+    const version = params.versionId?.trim()
+      ? await this.getVersionInfo(params.versionId)
+      : (await this.getProjectVersions(projectId)).find((candidate) =>
+          candidate.files.some((file) =>
+            file.filename.toLowerCase().endsWith('.mrpack'),
+          ),
+        ) ?? null;
+    if (!version || version.projectId !== projectId) {
+      throw new ModrinthError(
+        'インストール可能なModpackバージョンがありません。',
+        'no-compatible-version',
+        { projectId, versionId: params.versionId },
+      );
+    }
+    const archiveFile = this.selectModpackFile(version);
+    await fs.mkdir(params.instanceDirectory, { recursive: true });
+    const archivePath = path.join(
+      params.instanceDirectory,
+      `.mason-${version.id}-${randomUUID()}.mrpack`,
+    );
+    this.sendModpackProgress(sender, {
+      projectId,
+      versionId: version.id,
+      phase: 'archive',
+      percent: 0,
+      message: 'Modpackをダウンロードしています...',
+    });
+    try {
+      await this.downloadToFile(archiveFile, archivePath, (received, total) => {
+        this.sendModpackProgress(sender, {
+          projectId,
+          versionId: version.id,
+          phase: 'archive',
+          percent: total > 0 ? Math.round((received / total) * 20) : 0,
+          received,
+          total,
+          message: 'Modpackをダウンロードしています...',
+        });
+      });
+      const index = await this.readModpackIndex(archivePath);
+      const loader = this.resolveModpackLoader(index);
+      let installedFiles = 0;
+      let skippedFiles = 0;
+      const clientFiles = index.files.filter((file) => {
+        if (file.env?.client === 'unsupported') {
+          skippedFiles += 1;
+          return false;
+        }
+        return true;
+      });
+      for (const [fileIndex, file] of clientFiles.entries()) {
+        const destination = this.safeInstanceFilePath(
+          params.instanceDirectory,
+          file.path,
+        );
+        await fs.mkdir(path.dirname(destination), { recursive: true });
+        await this.downloadModpackFile(file, destination);
+        installedFiles += 1;
+        this.sendModpackProgress(sender, {
+          projectId,
+          versionId: version.id,
+          phase: 'files',
+          file: file.path,
+          percent:
+            20 +
+            Math.round(((fileIndex + 1) / Math.max(1, clientFiles.length)) * 65),
+          message: `Modpackファイルを取得中: ${file.path}`,
+        });
+      }
+      this.sendModpackProgress(sender, {
+        projectId,
+        versionId: version.id,
+        phase: 'overrides',
+        percent: 90,
+        message: 'Modpackのoverrideを適用しています...',
+      });
+      const baseOverrides = await this.applyOverrideLayer(
+        archivePath,
+        params.instanceDirectory,
+        'overrides/',
+      );
+      const clientOverrides = await this.applyOverrideLayer(
+        archivePath,
+        params.instanceDirectory,
+        'client-overrides/',
+      );
+      const result: ModpackInstallResult = {
+        projectId,
+        versionId: version.id,
+        name: index.name.trim(),
+        summary:
+          typeof index.summary === 'string' && index.summary.trim()
+            ? index.summary.trim()
+            : null,
+        ...loader,
+        installedFiles,
+        skippedFiles,
+        overrideFiles: baseOverrides + clientOverrides,
+      };
+      this.sendModpackProgress(sender, {
+        projectId,
+        versionId: version.id,
+        phase: 'complete',
+        percent: 100,
+        message: `${result.name}をインストールしました。`,
+      });
+      this.log('info', 'mods', 'Modrinth Modpackをインストールしました。', {
+        projectId,
+        versionId: version.id,
+        instanceDirectory: params.instanceDirectory,
+        minecraftVersion: result.minecraftVersion,
+        loader: result.loader,
+        loaderVersion: result.loaderVersion,
+        installedFiles,
+        skippedFiles,
+        overrideFiles: result.overrideFiles,
+      });
+      return result;
+    } finally {
+      await fs.rm(archivePath, { force: true }).catch((): void => undefined);
+    }
   }
 
   private async hashFile(

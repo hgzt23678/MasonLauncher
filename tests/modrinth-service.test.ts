@@ -5,6 +5,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { ZipFile } from 'yazl';
 import {
   ModrinthError,
   ModrinthService,
@@ -14,6 +15,22 @@ import {
 const sha1 = (value: Buffer) => createHash('sha1').update(value).digest('hex');
 const sha512 = (value: Buffer) =>
   createHash('sha512').update(value).digest('hex');
+
+const buildZip = (entries: Record<string, Buffer | string>) =>
+  new Promise<Buffer>((resolve, reject) => {
+    const zip = new ZipFile();
+    const chunks: Buffer[] = [];
+    zip.outputStream.on('data', (chunk: Buffer) => chunks.push(chunk));
+    zip.outputStream.on('error', reject);
+    zip.outputStream.on('end', () => resolve(Buffer.concat(chunks)));
+    for (const [name, value] of Object.entries(entries)) {
+      zip.addBuffer(
+        Buffer.isBuffer(value) ? value : Buffer.from(value, 'utf8'),
+        name,
+      );
+    }
+    zip.end();
+  });
 
 type Handler = (
   request: http.IncomingMessage,
@@ -278,6 +295,211 @@ test('getProjectVersions が release を優先しつつ新しい順に並べる'
     versions.map((version) => version.id),
     ['rel-new', 'rel-old', 'beta-new'],
   );
+});
+
+test('.mrpackを検証して新規instanceへ展開する', async (t) => {
+  const mod = Buffer.from('fabric mod');
+  const skipped = Buffer.from('server only mod');
+  const index = {
+    formatVersion: 1,
+    game: 'minecraft',
+    versionId: 'pack-version',
+    name: 'Fabric Adventure',
+    summary: 'A test pack',
+    files: [
+      {
+        path: 'mods/example.jar',
+        hashes: { sha1: sha1(mod), sha512: sha512(mod) },
+        env: { client: 'required', server: 'optional' },
+        downloads: [] as string[],
+        fileSize: mod.length,
+      },
+      {
+        path: 'mods/server-only.jar',
+        hashes: { sha1: sha1(skipped), sha512: sha512(skipped) },
+        env: { client: 'unsupported', server: 'required' },
+        downloads: [] as string[],
+        fileSize: skipped.length,
+      },
+    ],
+    dependencies: {
+      minecraft: '1.20.1',
+      'fabric-loader': '0.15.11',
+    },
+  };
+  let archive: Buffer<ArrayBufferLike> = Buffer.alloc(0);
+  const server = await startServer((_request, url) => {
+    if (url.pathname === '/v2/version/pack-version') {
+      return {
+        json: {
+          id: 'pack-version',
+          project_id: 'pack-project',
+          name: 'Fabric Adventure 1.0',
+          version_number: '1.0',
+          version_type: 'release',
+          files: [
+            {
+              url: `${server.baseUrl}/download/pack.mrpack`,
+              filename: 'fabric-adventure.mrpack',
+              primary: true,
+              size: archive.length,
+              hashes: { sha1: sha1(archive), sha512: sha512(archive) },
+            },
+          ],
+        },
+      };
+    }
+    if (url.pathname === '/download/pack.mrpack') {
+      return { body: archive };
+    }
+    if (url.pathname === '/download/example.jar') {
+      return { body: mod };
+    }
+    if (url.pathname === '/download/server-only.jar') {
+      return { body: skipped };
+    }
+    return { status: 404, json: {} };
+  });
+  index.files[0].downloads = [`${server.baseUrl}/download/example.jar`];
+  index.files[1].downloads = [`${server.baseUrl}/download/server-only.jar`];
+  archive = await buildZip({
+    'modrinth.index.json': JSON.stringify(index),
+    'overrides/config/example.txt': 'base override',
+    'client-overrides/config/example.txt': 'client override',
+    'client-overrides/options.txt': 'fov:90',
+  });
+  t.after(server.close);
+
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-mrpack-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const result = await makeService(server.baseUrl).installModpack({
+    instanceDirectory: root,
+    projectId: 'pack-project',
+    versionId: 'pack-version',
+  });
+
+  assert.equal(result.name, 'Fabric Adventure');
+  assert.equal(result.minecraftVersion, '1.20.1');
+  assert.equal(result.loader, 'fabric');
+  assert.equal(result.loaderVersion, '0.15.11');
+  assert.equal(result.installedFiles, 1);
+  assert.equal(result.skippedFiles, 1);
+  assert.deepEqual(
+    await fs.readFile(path.join(root, 'mods', 'example.jar')),
+    mod,
+  );
+  await assert.rejects(
+    fs.access(path.join(root, 'mods', 'server-only.jar')),
+  );
+  assert.equal(
+    await fs.readFile(path.join(root, 'config', 'example.txt'), 'utf8'),
+    'client override',
+  );
+  assert.equal(
+    await fs.readFile(path.join(root, 'options.txt'), 'utf8'),
+    'fov:90',
+  );
+});
+
+test('.mrpackのinstance外パスとQuilt依存を拒否する', async (t) => {
+  const makeArchive = (
+    dependencies: Record<string, string>,
+    filePath: string,
+    overridePath?: string,
+  ) =>
+    buildZip({
+      'modrinth.index.json': JSON.stringify({
+        formatVersion: 1,
+        game: 'minecraft',
+        versionId: 'unsafe-pack',
+        name: 'Unsafe Pack',
+        files: [
+          {
+            path: filePath,
+            hashes: { sha1: sha1(Buffer.from('x')), sha512: sha512(Buffer.from('x')) },
+            env: { client: 'unsupported' },
+            downloads: ['https://cdn.modrinth.com/data/x'],
+            fileSize: 1,
+          },
+        ],
+        dependencies,
+      }),
+      ...(overridePath ? { [overridePath]: 'unsafe override' } : {}),
+    });
+  const archives = new Map<string, Buffer>();
+  const server = await startServer((_request, url) => {
+    const archive = archives.get(url.pathname);
+    if (archive) return { body: archive };
+    return { status: 404, json: {} };
+  });
+  t.after(server.close);
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-mrpack-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+
+  for (const [versionId, dependencies, filePath, overridePath, errorKind] of [
+    [
+      'traversal',
+      { minecraft: '1.20.1', 'fabric-loader': '0.15.11' },
+      '../escape.jar',
+      undefined,
+      'invalid-input',
+    ],
+    [
+      'quilt',
+      { minecraft: '1.20.1', 'quilt-loader': '0.24.0' },
+      'mods/example.jar',
+      undefined,
+      'unsupported-loader',
+    ],
+    [
+      'override-drive',
+      { minecraft: '1.20.1', 'fabric-loader': '0.15.11' },
+      'mods/example.jar',
+      'client-overrides/C:/escape.txt',
+      'invalid-input',
+    ],
+  ] as const) {
+    const archive = await makeArchive(dependencies, filePath, overridePath);
+    archives.set(`/download/${versionId}.mrpack`, archive);
+    const service = new ModrinthService(() => undefined, {
+      apiBase: `${server.baseUrl}/v2`,
+      allowInsecureDownloads: true,
+      fetchImpl: async (input, init) => {
+        const url = new URL(String(input));
+        if (url.pathname === `/v2/version/${versionId}`) {
+          return new Response(
+            JSON.stringify({
+              id: versionId,
+              project_id: 'pack-project',
+              name: 'Unsafe Pack',
+              version_number: '1',
+              files: [
+                {
+                  url: `${server.baseUrl}/download/${versionId}.mrpack`,
+                  filename: `${versionId}.mrpack`,
+                  primary: true,
+                  size: archive.length,
+                  hashes: { sha1: sha1(archive), sha512: sha512(archive) },
+                },
+              ],
+            }),
+            { headers: { 'content-type': 'application/json' } },
+          );
+        }
+        return fetch(input, init);
+      },
+    });
+    await assert.rejects(
+      service.installModpack({
+        instanceDirectory: root,
+        projectId: 'pack-project',
+        versionId,
+      }),
+      (error: unknown) =>
+        error instanceof ModrinthError && error.kind === errorKind,
+    );
+  }
+  await assert.rejects(fs.access(path.join(path.dirname(root), 'escape.jar')));
 });
 
 test('selectDownloadFile が sources を除外し primary jar を選ぶ', () => {

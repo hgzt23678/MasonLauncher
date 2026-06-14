@@ -594,6 +594,11 @@ const api = window.launcher ?? {
       latestVersion: 'demo-modpack-version',
     },
   ],
+  modrinthInstallModpack: async () => ({
+    profileId: 'demo-installed-modpack',
+    profileName: 'Mason Adventure',
+    state: demoState,
+  }),
   modrinthGetVersions: async (): Promise<ModrinthVersionInfo[]> => [
     {
       id: 'demo-version',
@@ -682,6 +687,7 @@ const api = window.launcher ?? {
   },
   onAuthFlowState: () => () => undefined,
   onLog: () => () => undefined,
+  onModrinthModpackInstallProgress: () => () => undefined,
 };
 
 const byId = <T extends HTMLElement>(id: string) =>
@@ -2027,7 +2033,17 @@ const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
       chip.setAttribute('soft-disabled', '');
       categories.append(chip);
     }
-    card.append(header, description, meta, categories);
+    const actions = document.createElement('div');
+    actions.className = 'modpack-card-actions';
+    const install = document.createElement('md-filled-button');
+    install.dataset.action = 'install-modpack';
+    install.dataset.projectId = project.projectId;
+    if (project.latestVersion) {
+      install.dataset.versionId = project.latestVersion;
+    }
+    install.textContent = t('modpacks.install');
+    actions.append(install);
+    card.append(header, description, meta, categories, actions);
     modpacksResults.append(card);
   }
 };
@@ -2265,13 +2281,40 @@ modpacksSearchInput?.addEventListener('keydown', (event) => {
     modpacksSearchButton?.click();
   }
 });
-modpacksResults?.addEventListener('click', (event) => {
+modpacksResults?.addEventListener('click', async (event) => {
   const retry = (event.target as HTMLElement).closest<HTMLElement>(
     '[data-action="retry-modpacks"]',
   );
   if (retry) {
-    void searchModpacks(
+    await searchModpacks(
       String((modpacksSearchInput as MdEl)?.value ?? ''),
+      true,
+    );
+    return;
+  }
+  const install = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-action="install-modpack"]',
+  );
+  const projectId = install?.dataset.projectId;
+  if (!install || !projectId) return;
+  (install as MdEl).disabled = true;
+  install.textContent = t('modpacks.installing');
+  try {
+    const result = await api.modrinthInstallModpack(
+      projectId,
+      install.dataset.versionId || undefined,
+    );
+    renderState(result.state);
+    install.textContent = t('profiles.installed');
+    showToast(t('modpacks.installed', { name: result.profileName }));
+    setMainView('profiles');
+  } catch (error) {
+    (install as MdEl).disabled = false;
+    install.textContent = t('modpacks.install');
+    showToast(
+      error instanceof Error
+        ? error.message
+        : t('modpacks.installFailed'),
       true,
     );
   }
@@ -3025,6 +3068,30 @@ api.onProgress((payload) => {
     showToast(displayMessage, true);
   }
   if (payload.phase === 'complete') {
+    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
+  }
+});
+
+api.onModrinthModpackInstallProgress((payload) => {
+  statusBar?.removeAttribute('hidden');
+  const percent = typeof payload.percent === 'number' ? payload.percent : 0;
+  const message =
+    typeof payload.message === 'string'
+      ? payload.message
+      : t('modpacks.installing');
+  const file = typeof payload.file === 'string' ? payload.file : '';
+  const phase = typeof payload.phase === 'string' ? payload.phase : '';
+  if (statusProgress) (statusProgress as MdEl).value = percent / 100;
+  if (statusPercent) statusPercent.textContent = `${percent}%`;
+  if (statusStage) statusStage.textContent = phase;
+  if (statusMessage) {
+    statusMessage.textContent = file ? `${message} / ${file}` : message;
+  }
+  if (payload.phase === 'complete') {
+    window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
+  }
+  if (payload.phase === 'error') {
+    showToast(message, true);
     window.setTimeout(() => statusBar?.setAttribute('hidden', ''), 3000);
   }
 });
