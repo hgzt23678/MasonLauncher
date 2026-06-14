@@ -3,8 +3,17 @@
 Mason Launcher is a clean, instance-based launcher for Minecraft: Java Edition.
 Electron、Vite、TypeScriptで構築された独立した非公式アプリケーションです。
 
+## 日本語に強いMinecraftランチャー
+
+Mason Launcherは日本語を第一言語として設計し、認証、Java管理、
+Minecraft起動診断、Modrinth連携まで自然な日本語で案内します。
+日本語環境では追加設定なしで日本語を使用でき、OSの言語設定に応じて
+英語、繁體中文、简体中文、한국어にも自動で切り替わります。
+表示言語は設定画面からいつでも明示的に変更できます。
+
 ## Features
 
+- 日本語を標準とした5言語対応とシステム言語の自動検出
 - Vanilla / Forgeプロファイルの作成と管理
 - プロファイルごとに分離されたゲームインスタンス
 - Mojang公式メタデータに基づくクライアント、ライブラリ、assetsの取得と検証
@@ -66,13 +75,17 @@ npm start
 npm run lint
 npm run typecheck
 npm run test
-npm run package
-npm run make
+build.bat
+build-release.bat
+# Linux:
+./build-linux.sh debug
+./build-linux.sh release
 ```
 
 - `npm start`: Viteのホットリロード付きで起動
-- `npm run package`: `out/`へ展開済みアプリを作成
-- `npm run make`: `out/make/`へWindowsインストーラー等を作成
+- `build.bat`: Debugビルドを`out/debug/`へ作成
+- `build-release.bat`: Releaseビルドを`out/release/`へ作成
+- `build-linux.sh debug|release`: Linuxで構成別に`out/debug/`または`out/release/`へ作成
 
 `.env`にクライアントIDがない開発ビルドは起動できますが、Microsoftログインは無効になります。
 

@@ -276,14 +276,6 @@ const run = async () => {
     microsoftClientId: string;
     minMemory?: number;
     maxMemory?: number;
-    profiles?: Array<{
-      id: string;
-      resolvedVersionId?: string;
-      versionId?: string;
-      instanceDir?: string;
-      minMemory?: number;
-      maxMemory?: number;
-    }>;
   };
   const runtimeRoot =
     process.env.MASON_VERIFY_RUNTIME_ROOT?.trim() ||
@@ -370,19 +362,15 @@ const run = async () => {
         });
       }
       const javaProbe = await probeJavaExecutable(java.javaPath);
-      const matchingProfile = settings.profiles?.find(
-        (profile) =>
-          profile.resolvedVersionId === versionId ||
-          profile.versionId === versionId,
+      // Launch verification must never reuse a real profile directory. A
+      // modded profile can share its base Minecraft version with Vanilla, and
+      // matching only by version would mix mods/config/saves into the test.
+      const gamePath = path.join(
+        userData,
+        'instances',
+        `verification-${targetLabel.replace(/[^a-zA-Z0-9.-]/g, '-')}`,
+        'instance',
       );
-      const gamePath =
-        matchingProfile?.instanceDir ??
-        path.join(
-          userData,
-          'instances',
-          `verification-${targetLabel.replace(/[^a-zA-Z0-9.-]/g, '-')}`,
-          'instance',
-        );
       await fs.mkdir(gamePath, { recursive: true });
       await Promise.all(
         ['mods', 'config', 'saves', 'logs'].map((name) =>
@@ -395,10 +383,8 @@ const run = async () => {
         versionId,
         session,
         settings: {
-          minMemory:
-            matchingProfile?.minMemory ?? settings.minMemory ?? 1024,
-          maxMemory:
-            matchingProfile?.maxMemory ?? settings.maxMemory ?? 4096,
+          minMemory: settings.minMemory ?? 1024,
+          maxMemory: settings.maxMemory ?? 4096,
         },
         gamePath,
         resourcePath: settings.gameDirectory,

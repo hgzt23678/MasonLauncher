@@ -5,29 +5,50 @@
 .DESCRIPTION
     Runs: typecheck -> lint -> test -> package/make
     Stops immediately on any failure.
+.PARAMETER Configuration
+    debug   : full checks + expanded build under out/debug/ (default)
+    release : full checks + Squirrel installer under out/release/
+    The Configuration selects a sensible default -Target; pass -Target to override.
 .PARAMETER Target
-    make     : generate Squirrel installer under out/make/  (default)
-    package  : expand build under out/  (faster, no installer)
+    make     : generate installer artifacts under out/<configuration>/make/
+    package  : expand build under out/<configuration>/ (faster, no installer)
     check    : typecheck + lint + test only  (no build)
+    Defaults to 'make' for Release and 'package' for Debug.
 .PARAMETER SkipTests
     Skip the test step.
 .PARAMETER SkipLint
     Skip the ESLint step.
 .EXAMPLE
-    .\build.ps1
-    .\build.ps1 -Target package
-    .\build.ps1 -Target check
-    .\build.ps1 -Target make -SkipTests
+    .\build-win.ps1 debug
+    .\build-win.ps1 release
+    .\build-win.ps1 release -SkipTests
+    .\build-win.ps1 debug -Target check
 #>
 param(
+    [Parameter(Position = 0)]
+    [ValidateSet('release', 'debug')]
+    [string]$Configuration = 'debug',
     [ValidateSet('make', 'package', 'check')]
-    [string]$Target = 'make',
+    [string]$Target,
     [switch]$SkipTests,
     [switch]$SkipLint
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Set-Location $PSScriptRoot
+
+$Configuration = $Configuration.ToLowerInvariant()
+
+# Configuration drives the default Target unless the caller set one explicitly.
+if (-not $PSBoundParameters.ContainsKey('Target')) {
+    $Target = if ($Configuration -eq 'debug') { 'package' } else { 'make' }
+}
+
+# Surfaced to electron-forge / vite for any env-dependent behaviour.
+$env:MASON_BUILD_CONFIGURATION = $Configuration
+$env:NODE_ENV = if ($Configuration -eq 'debug') { 'development' } else { 'production' }
+$outputRoot = Join-Path $PSScriptRoot "out\$Configuration"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -63,8 +84,10 @@ function Invoke-Step {
 
 Write-Host ""
 Write-Host "Mason Launcher - Build" -ForegroundColor White
-Write-Host "Target : $Target" -ForegroundColor DarkGray
-Write-Host "Date   : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
+Write-Host "Configuration : $Configuration" -ForegroundColor DarkGray
+Write-Host "Target        : $Target" -ForegroundColor DarkGray
+Write-Host "Output        : $outputRoot" -ForegroundColor DarkGray
+Write-Host "Date          : $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor DarkGray
 
 $nodeVerRaw = (node --version) 2>&1
 if ($LASTEXITCODE -ne 0) {
@@ -77,7 +100,7 @@ if ($nodeMajor -lt 20) {
     Write-Host "ERROR: Node.js 20+ required (found: $nodeVer)" -ForegroundColor Red
     exit 1
 }
-Write-Host "Node   : $nodeVer" -ForegroundColor DarkGray
+Write-Host "Node          : $nodeVer" -ForegroundColor DarkGray
 
 if (-not (Test-Path "node_modules")) {
     Write-Step "npm install"
@@ -106,12 +129,12 @@ if (-not $SkipTests) {
 }
 
 if ($Target -eq 'package') {
-    Invoke-Step "electron-forge package  ->  out/" {
+    Invoke-Step "electron-forge package  ->  out/$Configuration/" {
         npm run package
     }
 }
 elseif ($Target -eq 'make') {
-    Invoke-Step "electron-forge make  ->  out/make/" {
+    Invoke-Step "electron-forge make  ->  out/$Configuration/make/" {
         npm run make
     }
 }
@@ -126,7 +149,7 @@ Write-Host ""
 Write-Host ("=" * 60) -ForegroundColor DarkGray
 
 if ($Target -eq 'make') {
-    $installer = Get-ChildItem "out\make\squirrel.windows\x64\*.exe" -ErrorAction SilentlyContinue |
+    $installer = Get-ChildItem (Join-Path $outputRoot "make\squirrel.windows\x64\*.exe") -ErrorAction SilentlyContinue |
                  Select-Object -First 1
     if ($installer) {
         $sizeMB = [math]::Round($installer.Length / 1MB, 1)
@@ -134,11 +157,11 @@ if ($Target -eq 'make') {
     }
 }
 elseif ($Target -eq 'package') {
-    $exe = Get-ChildItem "out\*\*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+    $exe = Get-ChildItem (Join-Path $outputRoot "*\*.exe") -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($exe) {
         Write-Host "Executable: $($exe.FullName)" -ForegroundColor White
     }
 }
 
-Write-Host "BUILD OK  (${elapsed}s)" -ForegroundColor Green
+Write-Host "BUILD OK  ($Configuration, ${elapsed}s)" -ForegroundColor Green
 Write-Host ""

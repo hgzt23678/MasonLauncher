@@ -4,6 +4,7 @@ import {
   compareVersionsByRelease,
   filterSelectableVersions,
   formatVersionLabel,
+  resolveProfileModCount,
   type MinecraftVersionInfo,
 } from '../src/renderer-logic';
 
@@ -68,4 +69,10 @@ test('releaseTimeが新しい順に並べる', () => {
 test('バージョン種別を表示ラベルへ整形する', () => {
   assert.equal(formatVersionLabel(versions[0]), '1.21.1  /  RELEASE');
   assert.equal(formatVersionLabel(versions[1]), '24w33a  /  SNAPSHOT');
+});
+
+test('profile card MOD count prefers the instance directory count', () => {
+  assert.equal(resolveProfileModCount({ modCount: 4, mods: [] }), 4);
+  assert.equal(resolveProfileModCount({ modCount: 0, mods: [{ id: 'old' }] }), 0);
+  assert.equal(resolveProfileModCount({ mods: [{ id: 'legacy' }] }), 1);
 });

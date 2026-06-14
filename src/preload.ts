@@ -27,6 +27,8 @@ contextBridge.exposeInMainWorld('launcher', {
     ipcRenderer.invoke('launcher:copy-reproduction-script', profileId),
   saveSettings: (settings: Record<string, unknown>) =>
     ipcRenderer.invoke('launcher:save-settings', settings),
+  configureMicrosoftClientId: (clientId: string) =>
+    ipcRenderer.invoke('auth:configure-client-id', clientId),
   saveProfile: (profile: Record<string, unknown>) =>
     ipcRenderer.invoke('profile:save', profile),
   getForgeBuilds: (minecraftVersion: string) =>
@@ -38,8 +40,6 @@ contextBridge.exposeInMainWorld('launcher', {
   addCustomJavaRuntime: () => ipcRenderer.invoke('java:add-custom'),
   removeJavaRuntime: (runtimeId: string) =>
     ipcRenderer.invoke('java:remove-runtime', runtimeId),
-  installJavaRuntime: (distribution: string, major: number) =>
-    ipcRenderer.invoke('java:install-runtime', distribution, major),
   chooseJavaExecutable: () => ipcRenderer.invoke('java:choose-executable'),
   selectProfile: (profileId: string) =>
     ipcRenderer.invoke('profile:select', profileId),
@@ -53,6 +53,11 @@ contextBridge.exposeInMainWorld('launcher', {
     options?: Record<string, unknown>,
   ) =>
     ipcRenderer.invoke('modrinth:search-mods', profileId, query, options ?? {}),
+  modrinthSearchModpacks: (
+    query: string,
+    options?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke('modrinth:search-modpacks', query, options ?? {}),
   modrinthGetProject: (idOrSlug: string) =>
     ipcRenderer.invoke('modrinth:get-project', idOrSlug),
   modrinthGetVersions: (
@@ -106,6 +111,4 @@ contextBridge.exposeInMainWorld('launcher', {
   onLog: (callback: EventCallback) => subscribe('launcher:log', callback),
   onModrinthDownloadProgress: (callback: EventCallback) =>
     subscribe('modrinth:download-progress', callback),
-  onJavaInstallProgress: (callback: EventCallback) =>
-    subscribe('java:install-progress', callback),
 });

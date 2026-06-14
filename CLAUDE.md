@@ -32,8 +32,9 @@ npm start            開発起動（Electron Forge + Vite HMR）
 npm run typecheck    型チェックのみ（ファイル出力なし）
 npm run lint         ESLint
 npm run test         Node.js test runner (tsx --test tests/**/*.test.ts)
-npm run package      out/ に展開ビルド
-npm run make         out/make/ に Squirrel インストーラ生成
+build.bat            out/debug/ に展開ビルド
+build-release.bat    out/release/ に Squirrel インストーラ生成
+build-linux.sh       debug/release を指定して構成別にビルド
 ```
 
 ---

@@ -8,19 +8,27 @@ import {
   clipboard,
   dialog,
   ipcMain,
+  Menu,
   shell,
 } from 'electron';
 import type { IpcMainInvokeEvent } from 'electron';
 import started from 'electron-squirrel-startup';
 import { Version } from '@xmcl/core';
-import { resolveMicrosoftClientId } from './auth-config';
+import {
+  isMicrosoftClientId,
+  resolveMicrosoftClientId,
+} from './auth-config';
 import { classifyAuthFailure } from './auth-errors';
 import { AuthService } from './auth-service';
+import {
+  clientIdConfigurationEnabled,
+  developerLogsVisibleByDefault,
+  normalizeBuildConfiguration,
+} from './build-configuration';
 import { LauncherDiagnostics } from './diagnostics';
 import {
   JavaRuntimeService,
   normalizeJavaSettings,
-  type JavaDistributionId,
   type ProfileJavaSettings,
 } from './java-runtime-service';
 import {
@@ -44,6 +52,11 @@ import {
   resolvedModLoaderVersionId,
   type ModLoaderType,
 } from './mod-loader-service';
+import {
+  normalizeLanguagePreference,
+  type LanguagePreference,
+} from './i18n';
+import { DEFAULT_THEME_COLOR, normalizeThemeColor } from './theme';
 
 type ProfileLoader = 'vanilla' | ModLoaderType;
 
@@ -51,6 +64,9 @@ type LauncherSettings = {
   gameDirectory: string;
   minMemory: number;
   maxMemory: number;
+  showDeveloperLogs: boolean;
+  language: LanguagePreference;
+  themeColor: string;
   microsoftClientId: string;
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -79,6 +95,11 @@ let authService: AuthService;
 let minecraftService: MinecraftService;
 let javaRuntimeService: JavaRuntimeService;
 let launchWorkflowInProgress = false;
+const buildConfiguration = normalizeBuildConfiguration(
+  __BUILD_CONFIGURATION__,
+);
+const isReleaseBuild = buildConfiguration === 'release';
+const canConfigureClientId = clientIdConfigurationEnabled(buildConfiguration);
 const diagnostics = new LauncherDiagnostics((entry) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('launcher:log', entry);
@@ -211,6 +232,9 @@ const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
   minMemory: 1024,
   maxMemory: 4096,
+  showDeveloperLogs: developerLogsVisibleByDefault(buildConfiguration),
+  language: 'system',
+  themeColor: DEFAULT_THEME_COLOR,
   microsoftClientId: __MICROSOFT_CLIENT_ID__.trim(),
   profiles: [
     {
@@ -368,6 +392,12 @@ const readSettings = async (): Promise<LauncherSettings> => {
           : defaults.gameDirectory,
       minMemory,
       maxMemory,
+      showDeveloperLogs:
+        typeof value.showDeveloperLogs === 'boolean'
+          ? value.showDeveloperLogs
+          : defaults.showDeveloperLogs,
+      language: normalizeLanguagePreference(value.language),
+      themeColor: normalizeThemeColor(value.themeColor),
       microsoftClientId: resolveMicrosoftClientId(
         value.microsoftClientId,
         defaults.microsoftClientId,
@@ -875,8 +905,22 @@ const getLauncherState = async () => {
   if (settingsChanged) {
     await writeSettings(settings);
   }
+  const profiles = await Promise.all(
+    settings.profiles.map(async (profile) => {
+      const instanceDirectory = await resolveInstanceDirectory(profile);
+      const profileModsDirectory = await ensureInstanceSubdirectory(
+        instanceDirectory,
+        'mods',
+      );
+      return {
+        ...profile,
+        modCount: await countEntries(profileModsDirectory, 'file'),
+      };
+    }),
+  );
 
   return {
+    buildConfiguration,
     gameDirectory: settings.gameDirectory,
     directoryExists,
     versions: installedVersions
@@ -891,8 +935,14 @@ const getLauncherState = async () => {
     settings: {
       minMemory: settings.minMemory,
       maxMemory: settings.maxMemory,
+      showDeveloperLogs: settings.showDeveloperLogs,
+      language: settings.language,
+      themeColor: settings.themeColor,
+      microsoftClientId: canConfigureClientId
+        ? settings.microsoftClientId
+        : null,
     },
-    profiles: settings.profiles,
+    profiles,
     selectedProfileId: settings.selectedProfileId,
     gameRunning: minecraftService.isRunning(),
   };
@@ -1031,9 +1081,43 @@ const registerIpcHandlers = () => {
         Math.round(update.maxMemory),
       );
     }
+    if (typeof update.showDeveloperLogs === 'boolean') {
+      settings.showDeveloperLogs = update.showDeveloperLogs;
+    }
+    if (typeof update.language === 'string') {
+      settings.language = normalizeLanguagePreference(update.language);
+    }
+    if (typeof update.themeColor === 'string' && !isReleaseBuild) {
+      settings.themeColor = normalizeThemeColor(update.themeColor);
+    }
     await writeSettings(settings);
     return getLauncherState();
   });
+
+  trustedIpc.handle(
+    'auth:configure-client-id',
+    async (_event, input: unknown) => {
+      if (!canConfigureClientId) {
+        throw new Error(
+          'Microsoft Client IDはDebugビルドからのみ変更できます。',
+        );
+      }
+      const clientId = typeof input === 'string' ? input.trim() : '';
+      if (!isMicrosoftClientId(clientId)) {
+        throw new Error(
+          'Microsoft Entraのアプリケーション（クライアント）IDをGUID形式で入力してください。',
+        );
+      }
+      const settings = await readSettings();
+      await authService.configure(clientId);
+      settings.microsoftClientId = clientId;
+      await writeSettings(settings);
+      log('info', 'auth:microsoft', 'Debug UIからClient IDを更新しました。', {
+        configured: true,
+      });
+      return getLauncherState();
+    },
+  );
 
   trustedIpc.handle('profile:save', async (_event, input: unknown) => {
     const settings = await readSettings();
@@ -1214,27 +1298,6 @@ const registerIpcHandlers = () => {
     return javaRuntimeService.removeRuntime(runtimeId.trim());
   });
 
-  trustedIpc.handle(
-    'java:install-runtime',
-    async (event, distribution: unknown, major: unknown) => {
-      if (typeof distribution !== 'string' || typeof major !== 'number') {
-        throw new Error('Javaインストール指定が不正です。');
-      }
-      if (launchWorkflowInProgress || minecraftService.isRunning()) {
-        throw new Error('Minecraft の起動処理中はJavaをインストールできません。');
-      }
-      return javaRuntimeService.installRuntime(
-        distribution as JavaDistributionId,
-        Math.round(major),
-        (progress) => {
-          if (!event.sender.isDestroyed()) {
-            event.sender.send('java:install-progress', progress);
-          }
-        },
-      );
-    },
-  );
-
   trustedIpc.handle('java:choose-executable', async () => {
     const result = await dialog.showOpenDialog({
       title: 'Java実行ファイルを選択',
@@ -1354,6 +1417,23 @@ const registerIpcHandlers = () => {
       return modrinthService.searchMods(query, {
         loader,
         gameVersion: profile.minecraftVersion,
+        limit: options.limit,
+        offset: options.offset,
+      });
+    },
+  );
+
+  trustedIpc.handle(
+    'modrinth:search-modpacks',
+    async (_event, query: unknown, input: unknown) => {
+      if (typeof query !== 'string') {
+        throw new Error('検索キーワードの指定が不正です。');
+      }
+      const options = (input ?? {}) as {
+        limit?: number;
+        offset?: number;
+      };
+      return modrinthService.searchModpacks(query, {
         limit: options.limit,
         offset: options.offset,
       });
@@ -1660,6 +1740,10 @@ const registerIpcHandlers = () => {
 };
 
 const createWindow = () => {
+  if (isReleaseBuild) {
+    Menu.setApplicationMenu(null);
+  }
+
   const mainWindow = new BrowserWindow({
     width: 1120,
     height: 720,
@@ -1667,6 +1751,7 @@ const createWindow = () => {
     minHeight: 620,
     backgroundColor: '#10150f',
     title: appName,
+    autoHideMenuBar: isReleaseBuild,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -1675,6 +1760,14 @@ const createWindow = () => {
       webSecurity: true,
     },
   });
+
+  if (isReleaseBuild) {
+    mainWindow.setMenu(null);
+    mainWindow.setMenuBarVisibility(false);
+  } else {
+    mainWindow.setAutoHideMenuBar(false);
+    mainWindow.setMenuBarVisibility(true);
+  }
 
   mainWindow.webContents.on('will-navigate', (event, targetUrl) => {
     if (!isTrustedRendererUrl(targetUrl)) {

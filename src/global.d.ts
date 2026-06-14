@@ -99,12 +99,14 @@ type LaunchProfile = {
     title: string;
     iconUrl: string | null;
   }>;
+  modCount?: number;
   java: ProfileJavaSettings;
   /** Absolute path to the profile's isolated game directory. */
   instanceDir: string;
 };
 
 type LauncherState = {
+  buildConfiguration: import('./build-configuration').BuildConfiguration;
   gameDirectory: string;
   directoryExists: boolean;
   versions: MinecraftVersion[];
@@ -121,6 +123,10 @@ type LauncherState = {
   settings: {
     minMemory: number;
     maxMemory: number;
+    showDeveloperLogs: boolean;
+    language: import('./i18n').LanguagePreference;
+    themeColor: string;
+    microsoftClientId: string | null;
   };
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -277,6 +283,9 @@ declare global {
       saveSettings: (
         settings: Record<string, unknown>,
       ) => Promise<LauncherState>;
+      configureMicrosoftClientId: (
+        clientId: string,
+      ) => Promise<LauncherState>;
       saveProfile: (
         profile: Record<string, unknown>,
       ) => Promise<LauncherState>;
@@ -309,10 +318,6 @@ declare global {
       }) => Promise<JavaRuntimeInfo[]>;
       addCustomJavaRuntime: () => Promise<JavaRuntimeInfo[] | null>;
       removeJavaRuntime: (runtimeId: string) => Promise<JavaRuntimeInfo[]>;
-      installJavaRuntime: (
-        distribution: JavaDistributionId,
-        major: number,
-      ) => Promise<JavaRuntimeInfo>;
       chooseJavaExecutable: () => Promise<string | null>;
       selectProfile: (profileId: string) => Promise<LauncherState>;
       deleteProfile: (profileId: string) => Promise<LauncherState>;
@@ -341,6 +346,10 @@ declare global {
         profileId: string,
         query: string,
         options?: ModrinthSearchOptions,
+      ) => Promise<ModrinthSearchHit[]>;
+      modrinthSearchModpacks: (
+        query: string,
+        options?: Pick<ModrinthSearchOptions, 'limit' | 'offset'>,
       ) => Promise<ModrinthSearchHit[]>;
       modrinthGetProject: (
         idOrSlug: string,
@@ -382,9 +391,6 @@ declare global {
       ) => () => void;
       onLog: (callback: (payload: LauncherEvent) => void) => () => void;
       onModrinthDownloadProgress: (
-        callback: (payload: LauncherEvent) => void,
-      ) => () => void;
-      onJavaInstallProgress: (
         callback: (payload: LauncherEvent) => void,
       ) => () => void;
     };

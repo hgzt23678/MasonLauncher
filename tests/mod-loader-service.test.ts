@@ -9,6 +9,7 @@ import {
   parseNeoForgeMavenMetadata,
   resolvedModLoaderVersionId,
 } from '../src/mod-loader-service';
+import { MinecraftError } from '../src/minecraft-errors';
 
 const temporaryDirectory = async (t: test.TestContext) => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mason-loader-test-'));
@@ -214,4 +215,60 @@ test('NeoForgeは公式client installerをJava指定で実行する', async () =
     },
   ]);
   assert.deepEqual(prepared, [['neoforge-21.1.233', false]]);
+});
+
+test('NeoForge非対応Minecraft版はUNSUPPORTED_COMBINATIONになる', async () => {
+  const service = new ModLoaderService(
+    async () => 'unused',
+    () => undefined,
+    {
+      // Metadata only contains 1.21.1-era builds (21.1.x); 1.16.5 -> prefix
+      // '16.5.' matches nothing, so the combination is unsupported.
+      fetch: async () =>
+        new Response(
+          `
+            <metadata><versioning><versions>
+              <version>21.1.200</version>
+              <version>21.1.99</version>
+            </versions></versioning></metadata>
+          `,
+          { status: 200 },
+        ),
+      prepareInstalledVersion: async () => {
+        throw new Error('not used');
+      },
+    },
+  );
+
+  await assert.rejects(
+    service.getBuilds('neoforge', '1.16.5'),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.category === 'manifest' &&
+      error.code === 'UNSUPPORTED_COMBINATION' &&
+      error.detail?.loader === 'neoforge' &&
+      error.detail?.minecraftVersion === '1.16.5',
+  );
+});
+
+test('Fabric非対応Minecraft版もUNSUPPORTED_COMBINATIONになる', async () => {
+  const service = new ModLoaderService(
+    async () => 'unused',
+    () => undefined,
+    {
+      // Fabric meta returns an empty array for an unsupported Minecraft version.
+      fetch: async () => new Response(JSON.stringify([]), { status: 200 }),
+      prepareInstalledVersion: async () => {
+        throw new Error('not used');
+      },
+    },
+  );
+
+  await assert.rejects(
+    service.getBuilds('fabric', '1.0.0'),
+    (error: unknown) =>
+      error instanceof MinecraftError &&
+      error.code === 'UNSUPPORTED_COMBINATION' &&
+      error.detail?.loader === 'fabric',
+  );
 });

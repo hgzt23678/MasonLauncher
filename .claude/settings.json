@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(git rev-list --left-right --count master...develop)",
+      "PowerShell(git push origin develop)",
+      "Bash(ls -1 *.config.* vite.*.* forge.config.*)",
+      "Bash(ls -1 public)",
+      "Bash(ls -1 src/assets assets)",
+      "PowerShell(npm run typecheck 2>&1)",
+      "PowerShell(npm run lint 2>&1)",
+      "PowerShell(npm run test 2>&1)",
+      "Bash(git add *)",
+      "Bash(git update-index *)"
+    ]
+  }
+}

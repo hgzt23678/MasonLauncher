@@ -228,6 +228,7 @@ export class ModLoaderService {
         builds: builds.length,
         source: url,
       });
+      this.assertCombinationSupported(loader, minecraftVersion, builds);
       return builds;
     }
 
@@ -244,7 +245,28 @@ export class ModLoaderService {
       builds: builds.length,
       source: NEOFORGE_METADATA,
     });
+    this.assertCombinationSupported(loader, minecraftVersion, builds);
     return builds;
+  }
+
+  /**
+   * A successful metadata fetch with zero matching builds means the loader has
+   * no release for this Minecraft version. Surface it as an explicit
+   * UNSUPPORTED_COMBINATION instead of forcing an install that cannot work.
+   */
+  private assertCombinationSupported(
+    loader: Exclude<ModLoaderType, 'forge'>,
+    minecraftVersion: string,
+    builds: ModLoaderBuild[],
+  ) {
+    if (builds.length > 0) return;
+    const label = loader === 'fabric' ? 'Fabric' : 'NeoForge';
+    throw new MinecraftError(
+      `${label} は Minecraft ${minecraftVersion} に対応していません。対応するMinecraftバージョンを選択してください。`,
+      'manifest',
+      'UNSUPPORTED_COMBINATION',
+      { loader, minecraftVersion },
+    );
   }
 
   private async installFabricProfile(
