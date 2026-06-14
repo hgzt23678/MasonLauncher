@@ -12,6 +12,34 @@ test('Material selectへネイティブOptionを挿入しない', async () => {
   assert.doesNotMatch(rendererSource, /\bnew\s+Option\s*\(/);
 });
 
+test('developer logs append visible rows and defer hidden DOM updates', async () => {
+  const rendererSource = await fs.readFile(
+    path.resolve('src', 'renderer.ts'),
+    'utf8',
+  );
+
+  assert.match(rendererSource, /const appendDeveloperLog/);
+  assert.match(
+    rendererSource,
+    /const isDeveloperLogViewVisible/,
+  );
+  assert.match(rendererSource, /!settingsModal\.hasAttribute\('hidden'\)/);
+  assert.match(
+    rendererSource,
+    /developerLogList\.prepend\(createDeveloperLogRow\(entry\)\)/,
+  );
+  assert.match(
+    rendererSource,
+    /while \(developerLogList\.children\.length > 500\)/,
+  );
+  assert.match(rendererSource, /if \(visible && developerLogDomDirty\)/);
+  assert.match(rendererSource, /appendDeveloperLog\(entry\)/);
+  assert.doesNotMatch(
+    rendererSource,
+    /renderDeveloperLogs\(\[\.\.\.developerLogs,\s*entry\]\)/,
+  );
+});
+
 test('Debug login screen exposes the Client ID configuration controls', async () => {
   const [html, mainSource] = await Promise.all([
     fs.readFile(path.resolve('index.html'), 'utf8'),

@@ -912,41 +912,83 @@ const resolvedVersionIdFor = (
   return `neoforge-${loaderVersion}`;
 };
 
-const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
-  developerLogs = entries.slice(-500);
-  if (!developerLogList) return;
+let developerLogDomDirty = true;
+
+const createDeveloperLogRow = (entry: LauncherLogEntry) => {
+  const row = document.createElement('article');
+  row.className = `developer-log-row ${entry.level}`;
+  row.dataset.logId = String(entry.id);
+  const time = document.createElement('time');
+  time.dateTime = entry.timestamp;
+  time.textContent = new Intl.DateTimeFormat(currentLanguage, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(new Date(entry.timestamp));
+  const stage = document.createElement('span');
+  stage.textContent = entry.stage;
+  const message = document.createElement('p');
+  message.textContent = entry.message;
+  row.append(time, stage, message);
+  if (entry.detail && Object.keys(entry.detail).length > 0) {
+    const detail = document.createElement('pre');
+    detail.textContent = JSON.stringify(entry.detail, null, 2);
+    row.append(detail);
+  }
+  return row;
+};
+
+const isDeveloperLogViewVisible = () =>
+  Boolean(
+    developerLogList &&
+      developerLogSection &&
+      settingsModal &&
+      !developerLogSection.hasAttribute('hidden') &&
+      !settingsModal.hasAttribute('hidden'),
+  );
+
+const syncDeveloperLogDom = () => {
+  if (!developerLogList || !isDeveloperLogViewVisible()) {
+    developerLogDomDirty = true;
+    return;
+  }
   developerLogList.replaceChildren();
   if (developerLogs.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'developer-log-empty';
     empty.textContent = t('logs.empty');
     developerLogList.append(empty);
+  } else {
+    const fragment = document.createDocumentFragment();
+    for (const entry of developerLogs.slice().reverse()) {
+      fragment.append(createDeveloperLogRow(entry));
+    }
+    developerLogList.append(fragment);
+  }
+  developerLogDomDirty = false;
+};
+
+const renderDeveloperLogs = (entries: LauncherLogEntry[]) => {
+  developerLogs = entries.slice(-500);
+  developerLogDomDirty = true;
+  syncDeveloperLogDom();
+};
+
+const appendDeveloperLog = (entry: LauncherLogEntry) => {
+  developerLogs.push(entry);
+  if (developerLogs.length > 500) {
+    developerLogs.splice(0, developerLogs.length - 500);
+  }
+  if (!developerLogList || !isDeveloperLogViewVisible()) {
+    developerLogDomDirty = true;
     return;
   }
-  const fragment = document.createDocumentFragment();
-  for (const entry of developerLogs.slice().reverse()) {
-    const row = document.createElement('article');
-    row.className = `developer-log-row ${entry.level}`;
-    const time = document.createElement('time');
-    time.dateTime = entry.timestamp;
-    time.textContent = new Intl.DateTimeFormat(currentLanguage, {
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-    }).format(new Date(entry.timestamp));
-    const stage = document.createElement('span');
-    stage.textContent = entry.stage;
-    const message = document.createElement('p');
-    message.textContent = entry.message;
-    row.append(time, stage, message);
-    if (entry.detail && Object.keys(entry.detail).length > 0) {
-      const detail = document.createElement('pre');
-      detail.textContent = JSON.stringify(entry.detail, null, 2);
-      row.append(detail);
-    }
-    fragment.append(row);
+  developerLogList.querySelector('.developer-log-empty')?.remove();
+  developerLogList.prepend(createDeveloperLogRow(entry));
+  while (developerLogList.children.length > 500) {
+    developerLogList.lastElementChild?.remove();
   }
-  developerLogList.append(fragment);
+  developerLogDomDirty = false;
 };
 
 const refreshDeveloperLogs = async () => {
@@ -958,6 +1000,9 @@ const setDeveloperLogsVisible = (visible: boolean) => {
     (developerLogToggle as MdEl).selected = visible;
   }
   developerLogSection?.toggleAttribute('hidden', !visible);
+  if (visible && developerLogDomDirty) {
+    syncDeveloperLogDom();
+  }
 };
 
 const preferredColorScheme = window.matchMedia('(prefers-color-scheme: dark)');
@@ -1963,6 +2008,9 @@ const setMainView = (view: 'profiles' | 'modpacks' | 'settings') => {
   profilesNav?.setAttribute('data-active', String(view === 'profiles'));
   modpacksNav?.setAttribute('data-active', String(view === 'modpacks'));
   settingsNav?.setAttribute('data-active', String(view === 'settings'));
+  if (view === 'settings' && developerLogDomDirty) {
+    syncDeveloperLogDom();
+  }
 };
 
 const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
@@ -3045,7 +3093,7 @@ api.onLog((payload) => {
   ) {
     return;
   }
-  renderDeveloperLogs([...developerLogs, entry]);
+  appendDeveloperLog(entry);
 });
 
 api.onProgress((payload) => {

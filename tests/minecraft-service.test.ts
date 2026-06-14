@@ -6,6 +6,7 @@ import path from 'node:path';
 import test from 'node:test';
 import type { JavaRuntimeManifest } from '@xmcl/installer';
 import {
+  MinecraftService,
   isJavaRuntimeManifestComplete,
   repairJavaRuntimeManifestFiles,
   resolveLaunchJavaExecutable,
@@ -134,4 +135,63 @@ test('停止したMojang Javaダウンロードの不完全ファイルを補修
     await isJavaRuntimeManifestComplete(root, manifest),
     true,
   );
+});
+
+test('Mojang version manifestは同時取得を共有して10分間再利用する', async () => {
+  const service = new MinecraftService(async () => 'unused', 'unused');
+  const versions = [{ id: '1.21.1' }];
+  let requests = 0;
+  let resolveRequest: ((value: unknown[]) => void) | undefined;
+  const downloader = (
+    service as unknown as {
+      downloader: { getManifest: () => Promise<unknown[]> };
+    }
+  ).downloader;
+  downloader.getManifest = () => {
+    requests += 1;
+    return new Promise((resolve) => {
+      resolveRequest = resolve;
+    });
+  };
+
+  const first = service.getRemoteVersions();
+  const second = service.getRemoteVersions();
+  assert.equal(requests, 1);
+  assert.strictEqual(first, second);
+  resolveRequest?.(versions);
+  assert.strictEqual(await first, versions);
+  assert.strictEqual(await second, versions);
+  assert.strictEqual(await service.getRemoteVersions(), versions);
+  assert.equal(requests, 1);
+
+  (
+    service as unknown as {
+      manifestCache: { expiresAt: number; versions: unknown[] };
+    }
+  ).manifestCache.expiresAt = Date.now() - 1;
+  downloader.getManifest = async () => {
+    requests += 1;
+    return [{ id: '1.21.2' }];
+  };
+  assert.deepEqual(await service.getRemoteVersions(), [{ id: '1.21.2' }]);
+  assert.equal(requests, 2);
+});
+
+test('Mojang version manifest取得失敗後は次回再試行する', async () => {
+  const service = new MinecraftService(async () => 'unused', 'unused');
+  const downloader = (
+    service as unknown as {
+      downloader: { getManifest: () => Promise<unknown[]> };
+    }
+  ).downloader;
+  let requests = 0;
+  downloader.getManifest = async () => {
+    requests += 1;
+    if (requests === 1) throw new Error('temporary failure');
+    return [{ id: '1.21.1' }];
+  };
+
+  await assert.rejects(service.getRemoteVersions(), /temporary failure/);
+  assert.deepEqual(await service.getRemoteVersions(), [{ id: '1.21.1' }]);
+  assert.equal(requests, 2);
 });
