@@ -153,25 +153,47 @@
         </section>
 
         <section class="modpacks-main" id="modpacks-section" hidden>
-          <div class="modpacks-header">
+          <header class="modpacks-header">
             <div>
               <p class="card-kicker">MODRINTH MODPACKS</p>
               <h2 class="modpacks-title" data-i18n="modpacks.title">ModPackを探す</h2>
               <p class="modpacks-description" data-i18n="modpacks.description">Modrinthで公開されているModPackを検索します。</p>
             </div>
-          </div>
-          <div class="modpacks-search-row">
-            <md-outlined-text-field
-              id="modpacks-search-input"
-              placeholder="ModPack名を検索（空欄は人気順）"
-              data-i18n-placeholder="modpacks.searchPlaceholder"
-            ></md-outlined-text-field>
-            <md-filled-button id="modpacks-search-button" type="button">
-              <span data-i18n="modpacks.search">検索</span>
-            </md-filled-button>
-          </div>
-          <md-linear-progress id="modpacks-progress" indeterminate hidden></md-linear-progress>
-          <div class="modpacks-results" id="modpacks-results" aria-live="polite"></div>
+          </header>
+          <md-filled-card class="modpacks-search-surface">
+            <div class="modpacks-search-row" role="search">
+              <md-outlined-text-field
+                class="modpacks-search-field"
+                id="modpacks-search-input"
+                type="search"
+                label="ModPack名を検索（空欄は人気順）"
+                data-i18n-label="modpacks.searchPlaceholder"
+                placeholder="ModPack名を検索（空欄は人気順）"
+                data-i18n-placeholder="modpacks.searchPlaceholder"
+              >
+                <svg slot="leading-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m21 20-5.2-5.2a7 7 0 1 0-1.4 1.4L19.6 21zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0"/>
+                </svg>
+              </md-outlined-text-field>
+              <md-filled-button id="modpacks-search-button" type="button">
+                <svg slot="icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m21 20-5.2-5.2a7 7 0 1 0-1.4 1.4L19.6 21zM5 10.5a5.5 5.5 0 1 1 11 0 5.5 5.5 0 0 1-11 0"/>
+                </svg>
+                <span data-i18n="modpacks.search">検索</span>
+              </md-filled-button>
+            </div>
+            <md-linear-progress id="modpacks-progress" indeterminate hidden></md-linear-progress>
+          </md-filled-card>
+          <section class="modpacks-collection" aria-labelledby="modpacks-results-title">
+            <header class="modpacks-collection-header">
+              <div>
+                <p class="card-kicker">DISCOVER</p>
+                <h3 id="modpacks-results-title" data-i18n="modpacks.popularTitle">人気のModPack</h3>
+              </div>
+              <span class="modpacks-result-count" id="modpacks-result-count" aria-live="polite"></span>
+            </header>
+            <div class="modpacks-results" id="modpacks-results" aria-live="polite"></div>
+          </section>
         </section>
 
         <div class="launch-status-bar" id="launch-status-bar" hidden>
@@ -188,168 +210,203 @@
       </main>
     </div>
 
-    <!-- Account & Settings modal -->
-    <div class="modal-backdrop" id="settings-modal" hidden>
-      <section class="settings-modal" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-        <header class="modal-header">
+    <!-- Account & Settings destination -->
+    <section class="settings-main" id="settings-modal" hidden aria-labelledby="settings-title">
+      <div class="settings-page">
+        <header class="settings-page-header">
+          <md-icon-button id="modal-close" aria-label="プロファイルへ戻る" data-i18n-aria-label="nav.profiles">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
+              <path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/>
+            </svg>
+          </md-icon-button>
           <div>
             <p class="card-kicker">ACCOUNT & SETTINGS</p>
             <h2 id="settings-title" data-i18n="settings.title">設定</h2>
           </div>
-          <md-icon-button id="modal-close" aria-label="閉じる" data-i18n-aria-label="common.close">
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>
-            </svg>
-          </md-icon-button>
         </header>
 
-        <div class="account-summary">
-          <span class="profile-avatar" id="profile-avatar">?</span>
-          <div>
-            <strong id="profile-name" data-i18n="auth.signedOut">未ログイン</strong>
-            <small id="profile-status">Microsoftアカウントを接続してください</small>
-          </div>
-          <div class="account-actions">
-            <md-text-button id="settings-login-button" hidden><span data-i18n="auth.signIn">Microsoftでログイン</span></md-text-button>
-            <md-text-button id="logout-button" hidden><span data-i18n="auth.logout">ログアウト</span></md-text-button>
-          </div>
-        </div>
-
-        <div class="auth-method">
-          <span class="auth-method-icon">MS</span>
-          <div>
-            <strong data-i18n="settings.authMethod">認証方式</strong>
-            <small data-i18n="settings.authMethodDescription">Microsoft Entra ID のデバイスコードフローを使用します。</small>
-          </div>
-          <span class="auth-method-badge">BUILT-IN</span>
-        </div>
-
-        <p class="settings-caption" data-i18n="settings.gameDirectory">ゲームディレクトリ</p>
-        <div class="settings-section dir-section">
-          <p class="directory-path" id="directory-path">読み込み中...</p>
-          <div class="dir-action-row">
-            <md-outlined-button id="open-folder-button" type="button"><span data-i18n="settings.openDirectory">フォルダを開く</span></md-outlined-button>
-            <md-text-button id="change-folder-button" type="button"><span data-i18n="settings.changeDirectory">変更</span></md-text-button>
-          </div>
-        </div>
-
-        <p class="settings-caption" data-i18n="settings.statistics">統計</p>
-        <div class="stat-row">
-          <span><strong id="world-count">--</strong> <span data-i18n="settings.worlds">ワールド</span></span>
-          <span><strong id="mod-count">--</strong> MOD</span>
-          <span><strong id="screenshot-count">--</strong> <span data-i18n="settings.screenshots">スクリーンショット</span></span>
-        </div>
-
-        <p class="settings-caption" data-i18n="settings.defaultMemory">既定のメモリ</p>
-        <div class="memory-settings">
-          <md-filled-text-field
-            id="min-memory-input"
-            type="number"
-            label="最小メモリ (MB)"
-            data-i18n-label="settings.minMemory"
-            min="512"
-            step="256"
-          ></md-filled-text-field>
-          <md-filled-text-field
-            id="max-memory-input"
-            type="number"
-            label="最大メモリ (MB)"
-            data-i18n-label="settings.maxMemory"
-            min="1024"
-            step="256"
-          ></md-filled-text-field>
-        </div>
-        <md-filled-button id="save-settings-button" type="button" class="save-memory-button">
-          <span data-i18n="settings.saveMemory">設定を保存</span>
-        </md-filled-button>
-
-        <p class="settings-caption" data-i18n="settings.language">言語</p>
-        <div class="settings-section language-settings">
-          <md-filled-select id="language-select" label="表示言語" data-i18n-label="settings.languageLabel">
-            <md-select-option value="system" data-i18n="language.system">システム設定</md-select-option>
-            <md-select-option value="ja" data-i18n="language.ja">日本語</md-select-option>
-            <md-select-option value="en" data-i18n="language.en">English</md-select-option>
-            <md-select-option value="zh-Hant" data-i18n="language.zhHant">繁體中文</md-select-option>
-            <md-select-option value="zh-Hans" data-i18n="language.zhHans">简体中文</md-select-option>
-            <md-select-option value="ko" data-i18n="language.ko">한국어</md-select-option>
-          </md-filled-select>
-          <p class="java-runtime-note" data-i18n="settings.languageDescription">システム設定では、対応するOS言語を自動的に使用します。</p>
-        </div>
-
-        <p class="settings-caption" data-i18n="settings.javaManagement">Java 管理</p>
-        <div class="settings-section java-runtime-section">
-          <p class="java-runtime-note" data-i18n="settings.javaDescription">Minecraftのバージョンに合うEclipse Temurinを管理します。</p>
-          <div class="java-runtime-list" id="java-runtime-list" aria-live="polite">
-            <p class="java-runtime-empty" data-i18n="java.refreshing">Javaを再検出しています...</p>
-          </div>
-          <div class="dir-action-row">
-            <md-text-button id="java-refresh-button" type="button"><span data-i18n="settings.refreshJava">再読み込み</span></md-text-button>
-            <md-text-button id="java-add-custom-button" type="button"><span data-i18n="settings.addJava">手動で追加</span></md-text-button>
-          </div>
-          <p id="java-install-status" class="forge-status-text" hidden></p>
-        </div>
-
-        <p class="settings-caption" id="developer-settings-caption" data-i18n="settings.developerSettings" hidden>開発者設定</p>
-        <md-outlined-card class="developer-settings" id="developer-settings" hidden>
-          <div class="material-card-heading">
-            <strong data-i18n="settings.developerSettings">開発者設定</strong>
-            <md-assist-chip label="Debug" soft-disabled></md-assist-chip>
-          </div>
-          <p data-i18n="settings.developerSettingsDescription">Debugビルド専用の認証と表示テーマを設定します。</p>
-          <md-outlined-text-field
-            id="developer-client-id-input"
-            label="Microsoft Entra Client ID"
-            data-i18n-label="login.clientIdLabel"
-            maxlength="36"
-          ></md-outlined-text-field>
-          <md-filled-button id="developer-client-id-save" type="button">
-            <span data-i18n="login.clientIdSave">Client IDを保存</span>
-          </md-filled-button>
-          <small id="developer-client-id-status" aria-live="polite"></small>
-          <md-divider></md-divider>
-          <div class="developer-theme-heading">
-            <div>
-              <strong data-i18n="settings.themeColor">Materialテーマカラー</strong>
-              <small data-i18n="settings.themeColorDescription">6桁のHEXカラーをMaterial Webの主要色へ反映します。</small>
+        <div class="settings-layout">
+          <md-filled-card class="settings-card account-settings-card">
+            <div class="settings-card-heading">
+              <div>
+                <p class="settings-card-eyebrow" data-i18n="settings.account">アカウント</p>
+                <h3 data-i18n="settings.accountState">アカウント状態</h3>
+              </div>
             </div>
-            <span class="theme-color-preview" id="theme-color-preview" aria-hidden="true"></span>
-          </div>
-          <md-outlined-text-field
-            id="developer-theme-color-input"
-            label="Theme color"
-            data-i18n-label="settings.themeColor"
-            maxlength="7"
-            supporting-text="#RRGGBB"
-          ></md-outlined-text-field>
-          <md-filled-button id="developer-theme-color-save" type="button">
-            <span data-i18n="settings.applyThemeColor">テーマカラーを保存</span>
-          </md-filled-button>
-          <small id="developer-theme-color-status" aria-live="polite"></small>
-        </md-outlined-card>
+            <div class="account-summary">
+              <span class="profile-avatar" id="profile-avatar">?</span>
+              <div>
+                <strong id="profile-name" data-i18n="auth.signedOut">未ログイン</strong>
+                <small id="profile-status">Microsoftアカウントを接続してください</small>
+              </div>
+              <div class="account-actions">
+                <md-text-button id="settings-login-button" hidden><span data-i18n="auth.signIn">Microsoftでログイン</span></md-text-button>
+                <md-text-button id="logout-button" hidden><span data-i18n="auth.logout">ログアウト</span></md-text-button>
+              </div>
+            </div>
 
-        <div class="developer-log-toggle-row">
-          <div>
-            <strong data-i18n="settings.developerLogs">開発者ログ</strong>
-            <small data-i18n="settings.developerLogsDescription">起動処理やダウンロードの詳細を表示します。</small>
-          </div>
-          <md-switch id="developer-log-toggle" aria-label="開発者ログを表示" data-i18n-aria-label="settings.showDeveloperLogs"></md-switch>
+            <md-divider></md-divider>
+            <div class="auth-method">
+              <span class="auth-method-icon">MS</span>
+              <div>
+                <strong data-i18n="settings.authMethod">認証方式</strong>
+                <small data-i18n="settings.authMethodDescription">Microsoft Entra ID のデバイスコードフローを使用します。</small>
+              </div>
+              <md-assist-chip label="Built-in" soft-disabled></md-assist-chip>
+            </div>
+          </md-filled-card>
+
+          <md-filled-card class="settings-card storage-settings-card">
+            <div class="settings-card-heading">
+              <h3 data-i18n="settings.gameDirectory">ゲームディレクトリ</h3>
+            </div>
+            <div class="settings-section dir-section">
+              <p class="directory-path" id="directory-path">読み込み中...</p>
+              <div class="dir-action-row">
+                <md-outlined-button id="open-folder-button" type="button"><span data-i18n="settings.openDirectory">フォルダを開く</span></md-outlined-button>
+                <md-text-button id="change-folder-button" type="button"><span data-i18n="settings.changeDirectory">変更</span></md-text-button>
+              </div>
+            </div>
+
+            <md-divider></md-divider>
+            <div class="settings-card-heading compact">
+              <h3 data-i18n="settings.statistics">統計</h3>
+            </div>
+            <div class="stat-row">
+              <span><strong id="world-count">--</strong> <span data-i18n="settings.worlds">ワールド</span></span>
+              <span><strong id="mod-count">--</strong> MOD</span>
+              <span><strong id="screenshot-count">--</strong> <span data-i18n="settings.screenshots">スクリーンショット</span></span>
+            </div>
+          </md-filled-card>
+
+          <md-filled-card class="settings-card preferences-settings-card">
+            <div class="settings-card-heading">
+              <div>
+                <h3 data-i18n="settings.defaultMemory">既定のメモリ</h3>
+                <p data-i18n="settings.defaultMemoryDescription">プロファイルで個別指定しない場合に使用します。</p>
+              </div>
+            </div>
+            <div class="memory-settings">
+              <md-filled-text-field
+                id="min-memory-input"
+                type="number"
+                label="最小メモリ (MB)"
+                data-i18n-label="settings.minMemory"
+                min="512"
+                step="256"
+              ></md-filled-text-field>
+              <md-filled-text-field
+                id="max-memory-input"
+                type="number"
+                label="最大メモリ (MB)"
+                data-i18n-label="settings.maxMemory"
+                min="1024"
+                step="256"
+              ></md-filled-text-field>
+            </div>
+            <md-filled-button id="save-settings-button" type="button" class="save-memory-button">
+              <span data-i18n="settings.saveMemory">設定を保存</span>
+            </md-filled-button>
+
+            <md-divider></md-divider>
+            <div class="settings-card-heading compact">
+              <h3 data-i18n="settings.language">言語</h3>
+            </div>
+            <div class="settings-section language-settings">
+              <md-filled-select id="language-select" label="表示言語" data-i18n-label="settings.languageLabel">
+                <md-select-option value="system" data-i18n="language.system">システム設定</md-select-option>
+                <md-select-option value="ja" data-i18n="language.ja">日本語</md-select-option>
+                <md-select-option value="en" data-i18n="language.en">English</md-select-option>
+                <md-select-option value="zh-Hant" data-i18n="language.zhHant">繁體中文</md-select-option>
+                <md-select-option value="zh-Hans" data-i18n="language.zhHans">简体中文</md-select-option>
+                <md-select-option value="ko" data-i18n="language.ko">한국어</md-select-option>
+              </md-filled-select>
+              <p class="java-runtime-note" data-i18n="settings.languageDescription">システム設定では、対応するOS言語を自動的に使用します。</p>
+            </div>
+          </md-filled-card>
+
+          <md-filled-card class="settings-card java-settings-card">
+            <div class="settings-card-heading">
+              <div>
+                <h3 data-i18n="settings.javaManagement">Java 管理</h3>
+                <p data-i18n="settings.javaDescription">Minecraftのバージョンに合うEclipse Temurinを管理します。</p>
+              </div>
+            </div>
+            <div class="settings-section java-runtime-section">
+              <div class="java-runtime-list" id="java-runtime-list" aria-live="polite">
+                <p class="java-runtime-empty" data-i18n="java.refreshing">Javaを再検出しています...</p>
+              </div>
+              <div class="dir-action-row">
+                <md-text-button id="java-refresh-button" type="button"><span data-i18n="settings.refreshJava">再読み込み</span></md-text-button>
+                <md-text-button id="java-add-custom-button" type="button"><span data-i18n="settings.addJava">手動で追加</span></md-text-button>
+              </div>
+              <p id="java-install-status" class="forge-status-text" hidden></p>
+            </div>
+          </md-filled-card>
+
+          <md-outlined-card class="settings-card developer-settings" id="developer-settings" hidden>
+            <div class="material-card-heading">
+              <strong data-i18n="settings.developerSettings">開発者設定</strong>
+              <md-assist-chip label="Debug" soft-disabled></md-assist-chip>
+            </div>
+            <p data-i18n="settings.developerSettingsDescription">Debugビルド専用の認証と表示テーマを設定します。</p>
+            <md-outlined-text-field
+              id="developer-client-id-input"
+              label="Microsoft Entra Client ID"
+              data-i18n-label="login.clientIdLabel"
+              maxlength="36"
+            ></md-outlined-text-field>
+            <md-filled-button id="developer-client-id-save" type="button">
+              <span data-i18n="login.clientIdSave">Client IDを保存</span>
+            </md-filled-button>
+            <small id="developer-client-id-status" aria-live="polite"></small>
+            <md-divider></md-divider>
+            <div class="developer-theme-heading">
+              <div>
+                <strong data-i18n="settings.themeColor">Materialテーマカラー</strong>
+                <small data-i18n="settings.themeColorDescription">6桁のHEXカラーをMaterial Webの主要色へ反映します。</small>
+              </div>
+              <span class="theme-color-preview" id="theme-color-preview" aria-hidden="true"></span>
+            </div>
+            <md-outlined-text-field
+              id="developer-theme-color-input"
+              label="Theme color"
+              data-i18n-label="settings.themeColor"
+              maxlength="7"
+              supporting-text="#RRGGBB"
+            ></md-outlined-text-field>
+            <md-filled-button id="developer-theme-color-save" type="button">
+              <span data-i18n="settings.applyThemeColor">テーマカラーを保存</span>
+            </md-filled-button>
+            <small id="developer-theme-color-status" aria-live="polite"></small>
+          </md-outlined-card>
+
+          <md-filled-card class="settings-card developer-log-preferences-card">
+            <div class="developer-log-toggle-row">
+              <div>
+                <strong data-i18n="settings.developerLogs">開発者ログ</strong>
+                <small data-i18n="settings.developerLogsDescription">起動処理やダウンロードの詳細を表示します。</small>
+              </div>
+              <md-switch id="developer-log-toggle" aria-label="開発者ログを表示" data-i18n-aria-label="settings.showDeveloperLogs"></md-switch>
+            </div>
+          </md-filled-card>
+
+          <md-filled-card class="settings-card developer-log-section" id="developer-log-section" hidden>
+            <div class="developer-log-heading">
+              <div>
+                <strong data-i18n="settings.developerLogs">開発者ログ</strong>
+                <small data-i18n="settings.developerLogsDescription">起動処理やダウンロードの詳細を表示します。</small>
+              </div>
+              <div>
+                <md-text-button id="refresh-logs-button" type="button"><span data-i18n="settings.refreshJava">再読み込み</span></md-text-button>
+                <md-text-button id="clear-logs-button" type="button"><span data-i18n="settings.clearLogs">ログを消去</span></md-text-button>
+              </div>
+            </div>
+            <div class="developer-log-list" id="developer-log-list" aria-live="polite"></div>
+          </md-filled-card>
         </div>
-
-        <section class="developer-log-section" id="developer-log-section" hidden>
-          <div class="developer-log-heading">
-            <div>
-              <strong data-i18n="settings.developerLogs">開発者ログ</strong>
-              <small data-i18n="settings.developerLogsDescription">起動処理やダウンロードの詳細を表示します。</small>
-            </div>
-            <div>
-              <md-text-button id="refresh-logs-button" type="button"><span data-i18n="settings.refreshJava">再読み込み</span></md-text-button>
-              <md-text-button id="clear-logs-button" type="button"><span data-i18n="settings.clearLogs">ログを消去</span></md-text-button>
-            </div>
-          </div>
-          <div class="developer-log-list" id="developer-log-list" aria-live="polite"></div>
-        </section>
-      </section>
-    </div>
+      </div>
+    </section>
 
     <!-- Profile editor modal -->
     <div class="modal-backdrop" id="profile-modal" hidden>

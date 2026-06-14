@@ -714,6 +714,8 @@ const modpacksSearchInput = byId<HTMLElement>('modpacks-search-input');
 const modpacksSearchButton = byId<HTMLElement>('modpacks-search-button');
 const modpacksProgress = byId<HTMLElement>('modpacks-progress');
 const modpacksResults = byId<HTMLElement>('modpacks-results');
+const modpacksResultsTitle = byId<HTMLElement>('modpacks-results-title');
+const modpacksResultCount = byId<HTMLElement>('modpacks-result-count');
 const addProfileButton = byId<HTMLElement>('add-profile-button');
 const profileCountBadge = byId<HTMLElement>('profile-count-badge');
 
@@ -750,9 +752,6 @@ const developerLogSection = byId<HTMLElement>('developer-log-section');
 const developerLogToggle = byId<HTMLElement>('developer-log-toggle');
 const refreshLogsButton = byId<HTMLElement>('refresh-logs-button');
 const clearLogsButton = byId<HTMLElement>('clear-logs-button');
-const developerSettingsCaption = byId<HTMLElement>(
-  'developer-settings-caption',
-);
 const developerSettings = byId<HTMLElement>('developer-settings');
 const developerClientIdInput = byId<HTMLElement>(
   'developer-client-id-input',
@@ -829,6 +828,7 @@ let showSnapshots = false;
 let activeProfileLoader: ProfileLoader = 'vanilla';
 let editingProfileId = '';
 let modpackSearchResults: ModrinthSearchHit[] | null = null;
+let activeModpackQuery = '';
 let modpackPopularCache:
   | { expiresAt: number; projects: ModrinthSearchHit[] }
   | undefined;
@@ -993,14 +993,14 @@ const setLoading = (loading: boolean) => {
 };
 
 const openSettingsModal = () => {
-  settingsModal?.removeAttribute('hidden');
+  setMainView('settings');
   void api.getAuthFlowState().then(renderAuthFlow);
   if (currentState?.settings.showDeveloperLogs) {
     void refreshDeveloperLogs();
   }
   void loadJavaRuntimes();
 };
-const closeSettingsModal = () => settingsModal?.setAttribute('hidden', '');
+const closeSettingsModal = () => setMainView('profiles');
 const closeProfileModal = () => profileModal?.setAttribute('hidden', '');
 
 const createSelectOption = (label: string, value: string) => {
@@ -1348,7 +1348,6 @@ const renderState = (state: LauncherState) => {
   }
   const showDebugClientId = state.buildConfiguration === 'debug';
   debugClientIdPanel?.toggleAttribute('hidden', !showDebugClientId);
-  developerSettingsCaption?.toggleAttribute('hidden', !showDebugClientId);
   developerSettings?.toggleAttribute('hidden', !showDebugClientId);
   if (debugClientIdInput && document.activeElement !== debugClientIdInput) {
     (debugClientIdInput as MdEl).value =
@@ -1951,16 +1950,28 @@ const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
   }
 };
 
-const setMainView = (view: 'profiles' | 'modpacks') => {
+const setMainView = (view: 'profiles' | 'modpacks' | 'settings') => {
   profilesSection?.toggleAttribute('hidden', view !== 'profiles');
   modpacksSection?.toggleAttribute('hidden', view !== 'modpacks');
+  settingsModal?.toggleAttribute('hidden', view !== 'settings');
   profilesNav?.setAttribute('data-active', String(view === 'profiles'));
   modpacksNav?.setAttribute('data-active', String(view === 'modpacks'));
+  settingsNav?.setAttribute('data-active', String(view === 'settings'));
 };
 
 const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
   if (!modpacksResults) return;
   modpacksResults.replaceChildren();
+  if (modpacksResultsTitle) {
+    modpacksResultsTitle.textContent = activeModpackQuery
+      ? t('modpacks.searchResultsTitle')
+      : t('modpacks.popularTitle');
+  }
+  if (modpacksResultCount) {
+    modpacksResultCount.textContent = t('modpacks.resultCount', {
+      count: new Intl.NumberFormat(currentLanguage).format(projects.length),
+    });
+  }
   if (projects.length === 0) {
     const empty = document.createElement('p');
     empty.className = 'modpacks-empty';
@@ -1970,7 +1981,7 @@ const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
   }
   const numberFormat = new Intl.NumberFormat(currentLanguage);
   for (const project of projects) {
-    const card = document.createElement('md-outlined-card');
+    const card = document.createElement('md-filled-card');
     card.className = 'modpack-card';
 
     const header = document.createElement('div');
@@ -2010,9 +2021,10 @@ const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
     const categories = document.createElement('div');
     categories.className = 'modpack-card-categories';
     for (const category of project.categories.slice(0, 4)) {
-      const chip = document.createElement('span');
+      const chip = document.createElement('md-assist-chip');
       chip.className = 'modpack-card-category';
-      chip.textContent = category;
+      chip.setAttribute('label', category);
+      chip.setAttribute('soft-disabled', '');
       categories.append(chip);
     }
     card.append(header, description, meta, categories);
@@ -2023,6 +2035,9 @@ const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
 const renderModpackSearchError = () => {
   if (!modpacksResults) return;
   modpacksResults.replaceChildren();
+  if (modpacksResultCount) {
+    modpacksResultCount.textContent = '';
+  }
   const wrapper = document.createElement('div');
   wrapper.className = 'modpacks-empty';
   const message = document.createElement('p');
@@ -2036,6 +2051,7 @@ const renderModpackSearchError = () => {
 
 const searchModpacks = async (query: string, force = false) => {
   const trimmed = query.trim();
+  activeModpackQuery = trimmed;
   if (
     !trimmed &&
     !force &&
@@ -2054,6 +2070,9 @@ const searchModpacks = async (query: string, force = false) => {
     modpacksResults.textContent = trimmed
       ? t('modpacks.searching')
       : t('modpacks.loadingPopular');
+  }
+  if (modpacksResultCount) {
+    modpacksResultCount.textContent = '';
   }
   try {
     const projects = await api.modrinthSearchModpacks(trimmed, { limit: 20 });
@@ -2479,9 +2498,6 @@ for (const button of [settingsNav, accountButton]) {
   button?.addEventListener('click', openSettingsModal);
 }
 modalClose?.addEventListener('click', closeSettingsModal);
-settingsModal?.addEventListener('click', (event) => {
-  if (event.target === settingsModal) closeSettingsModal();
-});
 
 const saveLauncherSettings = async () => {
   const state = await api.saveSettings({

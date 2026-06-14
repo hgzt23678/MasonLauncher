@@ -359,7 +359,7 @@ h1 {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 22px;
+  padding: 28px 28px 40px;
   scrollbar-gutter: stable;
 }
 
@@ -405,6 +405,8 @@ h2.profiles-title {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
+  max-width: 1180px;
+  margin: 0 auto;
 }
 
 .modpacks-title {
@@ -417,51 +419,95 @@ h2.profiles-title {
 .modpacks-description {
   margin: 7px 0 0;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.6;
+}
+
+.modpacks-search-surface {
+  display: block;
+  max-width: 1180px;
+  margin: 24px auto 0;
+  overflow: hidden;
+  padding: 20px;
+  --md-filled-card-container-color: var(--md-sys-color-surface-container-low);
+  --md-filled-card-container-shape: var(--md-sys-shape-corner-large);
 }
 
 .modpacks-search-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px;
-  margin-top: 20px;
+  align-items: center;
+  gap: 12px;
 }
 
-.modpacks-search-row md-outlined-text-field { width: 100%; }
+.modpacks-search-field {
+  width: 100%;
+  --md-outlined-text-field-container-shape: var(--md-sys-shape-corner-full);
+  --md-outlined-text-field-container-color: var(--md-sys-color-surface-container-lowest);
+}
+
+.modpacks-search-field svg,
+.modpacks-search-row md-filled-button svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
 
 #modpacks-progress {
   width: 100%;
-  margin-top: 14px;
+  margin-top: 16px;
 }
 
 #modpacks-progress[hidden] { display: none; }
 
+.modpacks-collection {
+  max-width: 1180px;
+  margin: 32px auto 0;
+}
+
+.modpacks-collection-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.modpacks-collection-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.modpacks-result-count {
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .modpacks-results {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 18px;
+  gap: 16px;
+  margin-top: 16px;
   padding-bottom: 20px;
 }
 
 .modpack-card {
   display: flex;
   min-width: 0;
-  min-height: 184px;
-  gap: 12px;
-  padding: 15px;
-  --md-outlined-card-container-color: var(--md-sys-color-surface-container-low);
-  --md-outlined-card-container-shape: 8px;
-  --md-outlined-card-outline-color: var(--md-sys-color-outline-variant);
+  min-height: 204px;
+  gap: 14px;
+  padding: 18px;
+  --md-filled-card-container-color: var(--md-sys-color-surface-container);
+  --md-filled-card-container-shape: var(--md-sys-shape-corner-medium);
   transition:
-    border-color var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
+    transform var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard),
     box-shadow var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
 }
 
 .modpack-card:hover {
-  --md-outlined-card-outline-color: var(--md-sys-color-outline);
+  transform: translateY(-2px);
   box-shadow: var(--app-elevation-1);
 }
 
@@ -507,8 +553,8 @@ h2.profiles-title {
   margin: 0;
   overflow: hidden;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 9px;
-  line-height: 1.45;
+  font-size: 11px;
+  line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
 }
@@ -519,14 +565,18 @@ h2.profiles-title {
   flex-wrap: wrap;
   gap: 6px 10px;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .modpack-card-category {
-  padding: 2px 6px;
-  color: var(--md-sys-color-primary);
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: 999px;
+  --md-assist-chip-container-height: 26px;
+  --md-assist-chip-container-shape: var(--md-sys-shape-corner-small);
+  --md-assist-chip-label-text-size: 9px;
+  --md-assist-chip-label-text-color: var(--md-sys-color-primary);
+  --md-assist-chip-disabled-label-text-color: var(--md-sys-color-primary);
+  --md-assist-chip-disabled-label-text-opacity: 1;
+  --md-assist-chip-disabled-outline-color: var(--md-sys-color-outline-variant);
+  --md-assist-chip-disabled-outline-opacity: 1;
 }
 
 .modpacks-empty {
@@ -595,6 +645,10 @@ h2.profiles-title {
   .modpacks-results,
   .modpacks-search-row {
     grid-template-columns: 1fr;
+  }
+
+  .modpacks-search-row md-filled-button {
+    width: 100%;
   }
 }
 
@@ -942,6 +996,165 @@ md-tabs {
   color: var(--md-sys-color-primary);
   font-weight: 600;
   flex-shrink: 0;
+}
+
+/* ─── Settings destination ─── */
+.settings-main {
+  position: fixed;
+  inset: 0 0 0 74px;
+  z-index: 15;
+  overflow-y: auto;
+  padding: 28px 30px 48px;
+  color: var(--md-sys-color-on-surface);
+  background: var(--md-sys-color-background);
+  scrollbar-gutter: stable;
+}
+
+.settings-main[hidden] { display: none; }
+
+.settings-main:not([hidden]) {
+  animation: view-enter var(--md-sys-motion-duration-medium1)
+    var(--md-sys-motion-easing-emphasized-decelerate);
+}
+
+.settings-page {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.settings-page-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.settings-page-header h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+
+.settings-page-header md-icon-button {
+  --md-icon-button-icon-color: var(--md-sys-color-on-surface-variant);
+  --md-icon-button-hover-icon-color: var(--md-sys-color-on-surface);
+}
+
+.settings-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 18px;
+}
+
+.settings-card {
+  display: flex;
+  min-width: 0;
+  gap: 18px;
+  padding: 22px;
+  --md-filled-card-container-color: var(--md-sys-color-surface-container-low);
+  --md-filled-card-container-shape: var(--md-sys-shape-corner-large);
+}
+
+.account-settings-card,
+.java-settings-card,
+.developer-settings,
+.developer-log-preferences-card,
+.developer-log-section {
+  grid-column: 1 / -1;
+}
+
+.settings-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-card-heading.compact { margin-top: 2px; }
+
+.settings-card-heading h3 {
+  margin: 0;
+  color: var(--md-sys-color-on-surface);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.settings-card-heading p {
+  margin: 5px 0 0;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.settings-card-eyebrow {
+  margin: 0 0 5px !important;
+  color: var(--md-sys-color-primary) !important;
+  font-size: 9px !important;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.settings-card md-divider {
+  --md-divider-color: var(--md-sys-color-outline-variant);
+}
+
+.settings-card .account-summary,
+.settings-card .auth-method,
+.settings-card .developer-log-toggle-row {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.settings-card .account-summary,
+.settings-card .auth-method {
+  padding: 0;
+}
+
+.settings-card .settings-section { margin-top: 0; }
+
+.settings-card .stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 0;
+}
+
+.settings-card .stat-row > span {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: var(--md-sys-shape-corner-medium);
+  background: var(--md-sys-color-surface-container);
+}
+
+.settings-card .stat-row strong { font-size: 18px; }
+
+.settings-card .memory-settings { margin-top: 0; }
+
+.settings-card .language-settings md-filled-select { width: 100%; }
+
+.settings-card .java-runtime-note {
+  border: 0;
+  background: transparent;
+}
+
+.settings-card.developer-settings {
+  padding: 22px;
+  --md-outlined-card-container-color: var(--md-sys-color-surface-container-lowest);
+  --md-outlined-card-container-shape: var(--md-sys-shape-corner-large);
+  --md-outlined-card-outline-color: var(--md-sys-color-outline);
+}
+
+.settings-card.developer-log-section {
+  margin-top: 0;
+  border: 0;
+  background: transparent;
 }
 
 /* ─── Modals ─── */
@@ -1742,6 +1955,24 @@ body.login-active .app-shell { visibility: hidden; }
     width: 100%;
     padding: 28px 20px;
     --md-filled-card-container-shape: 16px;
+  }
+}
+
+@media (max-width: 980px) {
+  .settings-main {
+    padding-inline: 20px;
+  }
+
+  .settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .account-settings-card,
+  .java-settings-card,
+  .developer-settings,
+  .developer-log-preferences-card,
+  .developer-log-section {
+    grid-column: auto;
   }
 }
 

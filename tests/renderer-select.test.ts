@@ -91,6 +91,48 @@ test('ModPack navigation opens a dedicated Modrinth search view', async () => {
   assert.match(mainSource, /modrinth:search-modpacks/);
 });
 
+test('Settings is a Material 3 destination instead of a blocking dialog', async () => {
+  const [html, rendererSource, css] = await Promise.all([
+    fs.readFile(path.resolve('index.html'), 'utf8'),
+    fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'index.css'), 'utf8'),
+  ]);
+
+  assert.match(
+    html,
+    /<section class="settings-main" id="settings-modal" hidden/,
+  );
+  assert.match(html, /<md-filled-card class="settings-card account-settings-card"/);
+  assert.match(html, /<md-filled-card class="settings-card preferences-settings-card"/);
+  assert.match(html, /<md-filled-card class="settings-card java-settings-card"/);
+  assert.doesNotMatch(
+    html,
+    /id="settings-modal"[^>]*role="dialog"|aria-modal="true"[^>]*aria-labelledby="settings-title"/,
+  );
+  assert.match(rendererSource, /setMainView\('settings'\)/);
+  assert.match(
+    css,
+    /\.settings-layout\s*\{[^}]*grid-template-columns:\s*repeat\(2,/s,
+  );
+});
+
+test('ModPack discovery uses Material search, filled cards, and chips', async () => {
+  const [html, rendererSource, css] = await Promise.all([
+    fs.readFile(path.resolve('index.html'), 'utf8'),
+    fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'index.css'), 'utf8'),
+  ]);
+
+  assert.match(html, /class="modpacks-search-surface"/);
+  assert.match(html, /slot="leading-icon"/);
+  assert.match(html, /id="modpacks-results-title"/);
+  assert.match(html, /id="modpacks-result-count"/);
+  assert.match(rendererSource, /document\.createElement\('md-filled-card'\)/);
+  assert.match(rendererSource, /document\.createElement\('md-assist-chip'\)/);
+  assert.match(css, /\.modpacks-search-surface\s*\{/);
+  assert.match(css, /\.modpacks-collection-header\s*\{/);
+});
+
 test('Material 3 color roles and motion tokens define accessible light and dark themes', async () => {
   const [html, css] = await Promise.all([
     fs.readFile(path.resolve('index.html'), 'utf8'),
