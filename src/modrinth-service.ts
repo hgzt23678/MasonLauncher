@@ -27,6 +27,7 @@ type LogWriter = (
 // --- Foundation types (Modrinth API v2) -----------------------------------
 
 export type ModrinthLoader = 'forge' | 'fabric' | 'quilt' | 'neoforge';
+type ModrinthProjectType = 'mod' | 'modpack';
 
 export type ModrinthReleaseChannel = 'release' | 'beta' | 'alpha';
 
@@ -491,21 +492,22 @@ export class ModrinthService {
 
   // --- New foundation: search ---------------------------------------------
 
-  async searchMods(
+  private async searchProjects(
     query: string,
     options: {
+      projectType: ModrinthProjectType;
       gameVersion?: string;
       loader?: ModrinthLoader;
       limit?: number;
       offset?: number;
-    } = {},
+    },
   ): Promise<ModrinthSearchHit[]> {
     const url = new URL(`${this.apiBase}/search`);
     const trimmed = query.trim();
     if (trimmed) {
       url.searchParams.set('query', trimmed);
     }
-    const facets: string[][] = [['project_type:mod']];
+    const facets: string[][] = [[`project_type:${options.projectType}`]];
     if (options.loader) {
       facets.push([`categories:${options.loader}`]);
     }
@@ -538,6 +540,34 @@ export class ModrinthService {
       latestVersion: hit.latest_version ?? null,
     }));
     return trimmed ? rankModrinthNameMatches(hits, trimmed) : hits;
+  }
+
+  async searchMods(
+    query: string,
+    options: {
+      gameVersion?: string;
+      loader?: ModrinthLoader;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<ModrinthSearchHit[]> {
+    return this.searchProjects(query, {
+      projectType: 'mod',
+      ...options,
+    });
+  }
+
+  async searchModpacks(
+    query: string,
+    options: {
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<ModrinthSearchHit[]> {
+    return this.searchProjects(query, {
+      projectType: 'modpack',
+      ...options,
+    });
   }
 
   // --- New foundation: project details ------------------------------------

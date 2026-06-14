@@ -53,6 +53,11 @@ contextBridge.exposeInMainWorld('launcher', {
     options?: Record<string, unknown>,
   ) =>
     ipcRenderer.invoke('modrinth:search-mods', profileId, query, options ?? {}),
+  modrinthSearchModpacks: (
+    query: string,
+    options?: Record<string, unknown>,
+  ) =>
+    ipcRenderer.invoke('modrinth:search-modpacks', query, options ?? {}),
   modrinthGetProject: (idOrSlug: string) =>
     ipcRenderer.invoke('modrinth:get-project', idOrSlug),
   modrinthGetVersions: (

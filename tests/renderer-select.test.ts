@@ -69,3 +69,24 @@ test('Debug developer settings expose Client ID and Material theme controls', as
   assert.match(css, /\.profile-grid\s*\{[^}]*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
   assert.match(css, /scrollbar-gutter:\s*stable/);
 });
+
+test('ModPack navigation opens a dedicated Modrinth search view', async () => {
+  const [html, rendererSource, preloadSource, mainSource] = await Promise.all([
+    fs.readFile(path.resolve('index.html'), 'utf8'),
+    fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'preload.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'main.ts'), 'utf8'),
+  ]);
+
+  assert.match(html, /id="modpacks-nav"/);
+  assert.match(html, /id="modpacks-section"\s+hidden/);
+  assert.ok(
+    html.indexOf('id="modpacks-nav"') < html.indexOf('id="settings-nav"'),
+    'ModPack button should be immediately above Settings in the sidebar',
+  );
+  assert.match(rendererSource, /setMainView\('modpacks'\)/);
+  assert.match(rendererSource, /setMainView\('profiles'\)/);
+  assert.match(rendererSource, /modrinthSearchModpacks/);
+  assert.match(preloadSource, /modrinth:search-modpacks/);
+  assert.match(mainSource, /modrinth:search-modpacks/);
+});

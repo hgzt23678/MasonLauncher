@@ -1423,6 +1423,23 @@ const registerIpcHandlers = () => {
     },
   );
 
+  trustedIpc.handle(
+    'modrinth:search-modpacks',
+    async (_event, query: unknown, input: unknown) => {
+      if (typeof query !== 'string') {
+        throw new Error('検索キーワードの指定が不正です。');
+      }
+      const options = (input ?? {}) as {
+        limit?: number;
+        offset?: number;
+      };
+      return modrinthService.searchModpacks(query, {
+        limit: options.limit,
+        offset: options.offset,
+      });
+    },
+  );
+
   trustedIpc.handle('modrinth:get-project', async (_event, idOrSlug: unknown) => {
     if (typeof idOrSlug !== 'string') {
       throw new Error('プロジェクト指定が不正です。');

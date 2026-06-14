@@ -578,6 +578,21 @@ const api = window.launcher ?? {
       latestVersion: 'demo-version',
     },
   ],
+  modrinthSearchModpacks: async (): Promise<ModrinthSearchHit[]> => [
+    {
+      projectId: 'demo-modpack',
+      slug: 'mason-adventure',
+      title: 'Mason Adventure',
+      description: 'A lightweight Modrinth modpack for previewing this screen.',
+      iconUrl: null,
+      downloads: 250000,
+      follows: 4200,
+      categories: ['adventure', 'fabric'],
+      clientSide: 'required',
+      serverSide: 'optional',
+      latestVersion: 'demo-modpack-version',
+    },
+  ],
   modrinthGetVersions: async (): Promise<ModrinthVersionInfo[]> => [
     {
       id: 'demo-version',
@@ -678,6 +693,7 @@ const openFolderNav = byId<HTMLElement>('open-folder-nav');
 const refreshNav = byId<HTMLElement>('refresh-nav');
 const settingsNav = byId<HTMLElement>('settings-nav');
 const profilesNav = byId<HTMLElement>('profiles-nav');
+const modpacksNav = byId<HTMLElement>('modpacks-nav');
 const accountButton = byId<HTMLElement>('account-button');
 const accountAvatar = byId<HTMLElement>('account-avatar');
 const accountLabel = byId<HTMLElement>('account-label');
@@ -692,6 +708,11 @@ const debugClientIdSave = byId<HTMLElement>('debug-client-id-save');
 const debugClientIdStatus = byId<HTMLElement>('debug-client-id-status');
 const profileGrid = byId<HTMLElement>('profile-grid');
 const profilesSection = byId<HTMLElement>('profiles-section');
+const modpacksSection = byId<HTMLElement>('modpacks-section');
+const modpacksSearchInput = byId<HTMLElement>('modpacks-search-input');
+const modpacksSearchButton = byId<HTMLElement>('modpacks-search-button');
+const modpacksProgress = byId<HTMLElement>('modpacks-progress');
+const modpacksResults = byId<HTMLElement>('modpacks-results');
 const addProfileButton = byId<HTMLElement>('add-profile-button');
 const profileCountBadge = byId<HTMLElement>('profile-count-badge');
 
@@ -806,11 +827,16 @@ let pendingCustomJavaPath: string | null = null;
 let showSnapshots = false;
 let activeProfileLoader: ProfileLoader = 'vanilla';
 let editingProfileId = '';
+let modpackSearchResults: ModrinthSearchHit[] | null = null;
+let modpackPopularCache:
+  | { expiresAt: number; projects: ModrinthSearchHit[] }
+  | undefined;
 const popularModsCache = new Map<
   string,
   { expiresAt: number; projects: ModrinthSearchHit[] }
 >();
 const popularModsCacheTtlMs = 60_000;
+const popularModpacksCacheTtlMs = 60_000;
 let modSearchHadQuery = false;
 let currentLanguage: SupportedLanguage = resolveLanguage(
   'system',
@@ -1333,6 +1359,9 @@ const renderState = (state: LauncherState) => {
   }
   setDeveloperLogsVisible(state.settings.showDeveloperLogs);
   renderProfileGrid();
+  if (modpackSearchResults) {
+    renderModpackSearchResults(modpackSearchResults);
+  }
   renderAuth(state.auth);
   if (javaRuntimesLoaded) {
     renderJavaRuntimeList();
@@ -1912,6 +1941,131 @@ const renderModSearchResults = (projects: ModrinthSearchHit[]) => {
   }
 };
 
+const setMainView = (view: 'profiles' | 'modpacks') => {
+  profilesSection?.toggleAttribute('hidden', view !== 'profiles');
+  modpacksSection?.toggleAttribute('hidden', view !== 'modpacks');
+  profilesNav?.setAttribute('data-active', String(view === 'profiles'));
+  modpacksNav?.setAttribute('data-active', String(view === 'modpacks'));
+};
+
+const renderModpackSearchResults = (projects: ModrinthSearchHit[]) => {
+  if (!modpacksResults) return;
+  modpacksResults.replaceChildren();
+  if (projects.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'modpacks-empty';
+    empty.textContent = t('modpacks.noResults');
+    modpacksResults.append(empty);
+    return;
+  }
+  const numberFormat = new Intl.NumberFormat(currentLanguage);
+  for (const project of projects) {
+    const card = document.createElement('md-outlined-card');
+    card.className = 'modpack-card';
+
+    const header = document.createElement('div');
+    header.className = 'modpack-card-header';
+    const icon = document.createElement('span');
+    icon.className = 'modpack-card-icon';
+    if (project.iconUrl) {
+      const image = document.createElement('img');
+      image.src = project.iconUrl;
+      image.alt = '';
+      image.loading = 'lazy';
+      icon.append(image);
+    } else {
+      icon.textContent = project.title.slice(0, 1).toUpperCase();
+    }
+    const title = document.createElement('h3');
+    title.textContent = project.title;
+    title.title = project.title;
+    header.append(icon, title);
+
+    const description = document.createElement('p');
+    description.className = 'modpack-card-description';
+    description.textContent = project.description;
+
+    const meta = document.createElement('div');
+    meta.className = 'modpack-card-meta';
+    const downloads = document.createElement('span');
+    downloads.textContent = t('modpacks.downloads', {
+      count: numberFormat.format(project.downloads),
+    });
+    const followers = document.createElement('span');
+    followers.textContent = t('modpacks.followers', {
+      count: numberFormat.format(project.follows),
+    });
+    meta.append(downloads, followers);
+
+    const categories = document.createElement('div');
+    categories.className = 'modpack-card-categories';
+    for (const category of project.categories.slice(0, 4)) {
+      const chip = document.createElement('span');
+      chip.className = 'modpack-card-category';
+      chip.textContent = category;
+      categories.append(chip);
+    }
+    card.append(header, description, meta, categories);
+    modpacksResults.append(card);
+  }
+};
+
+const renderModpackSearchError = () => {
+  if (!modpacksResults) return;
+  modpacksResults.replaceChildren();
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modpacks-empty';
+  const message = document.createElement('p');
+  message.textContent = t('modpacks.loadFailed');
+  const retry = document.createElement('md-outlined-button');
+  retry.dataset.action = 'retry-modpacks';
+  retry.textContent = t('common.retry');
+  wrapper.append(message, retry);
+  modpacksResults.append(wrapper);
+};
+
+const searchModpacks = async (query: string, force = false) => {
+  const trimmed = query.trim();
+  if (
+    !trimmed &&
+    !force &&
+    modpackPopularCache &&
+    modpackPopularCache.expiresAt > Date.now()
+  ) {
+    modpackSearchResults = modpackPopularCache.projects;
+    renderModpackSearchResults(modpackSearchResults);
+    return;
+  }
+  modpacksProgress?.removeAttribute('hidden');
+  if (modpacksSearchButton) {
+    (modpacksSearchButton as MdEl).disabled = true;
+  }
+  if (modpacksResults) {
+    modpacksResults.textContent = trimmed
+      ? t('modpacks.searching')
+      : t('modpacks.loadingPopular');
+  }
+  try {
+    const projects = await api.modrinthSearchModpacks(trimmed, { limit: 20 });
+    modpackSearchResults = projects;
+    if (!trimmed) {
+      modpackPopularCache = {
+        expiresAt: Date.now() + popularModpacksCacheTtlMs,
+        projects,
+      };
+    }
+    renderModpackSearchResults(projects);
+  } catch {
+    modpackSearchResults = null;
+    renderModpackSearchError();
+  } finally {
+    modpacksProgress?.setAttribute('hidden', '');
+    if (modpacksSearchButton) {
+      (modpacksSearchButton as MdEl).disabled = false;
+    }
+  }
+};
+
 const renderModSearchStatus = (message: string, retry = false) => {
   if (!modSearchResults) return;
   modSearchResults.replaceChildren();
@@ -2066,7 +2220,32 @@ profileGrid?.addEventListener('click', async (event) => {
 
 addProfileButton?.addEventListener('click', () => openProfileEditor());
 profilesNav?.addEventListener('click', () => {
-  profilesSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setMainView('profiles');
+});
+modpacksNav?.addEventListener('click', () => {
+  setMainView('modpacks');
+  if (!modpackSearchResults) {
+    void searchModpacks('');
+  }
+});
+modpacksSearchButton?.addEventListener('click', () => {
+  void searchModpacks(String((modpacksSearchInput as MdEl)?.value ?? ''));
+});
+modpacksSearchInput?.addEventListener('keydown', (event) => {
+  if ((event as KeyboardEvent).key === 'Enter') {
+    modpacksSearchButton?.click();
+  }
+});
+modpacksResults?.addEventListener('click', (event) => {
+  const retry = (event.target as HTMLElement).closest<HTMLElement>(
+    '[data-action="retry-modpacks"]',
+  );
+  if (retry) {
+    void searchModpacks(
+      String((modpacksSearchInput as MdEl)?.value ?? ''),
+      true,
+    );
+  }
 });
 profileModalClose?.addEventListener('click', closeProfileModal);
 cancelProfileButton?.addEventListener('click', closeProfileModal);

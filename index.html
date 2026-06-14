@@ -100,6 +100,11 @@
               <path d="M19 7v5h-5M5 17v-5h5M7.2 8.2A6.5 6.5 0 0 1 18 10M16.8 15.8A6.5 6.5 0 0 1 6 14"/>
             </svg>
           </md-icon-button>
+          <md-icon-button class="nav-icon-btn" id="modpacks-nav" type="button" aria-label="ModPack" data-i18n-aria-label="nav.modpacks">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5zM4 7.5l8 4.5 8-4.5M12 12v9"/>
+            </svg>
+          </md-icon-button>
           <md-icon-button class="nav-icon-btn" id="settings-nav" type="button" aria-label="設定" data-i18n-aria-label="nav.settings">
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 8.5a3.5 3.5 0 1 1 0 7 3.5 3.5 0 0 1 0-7zM19 12l2-1-2-3-2 .5-1.5-1L15 5h-6l-.5 2.5-1.5 1L5 8l-2 3 2 1v2l-2 1 2 3 2-.5 1.5 1L9 21h6l.5-2.5 1.5-1 2 .5 2-3-2-1z"/>
@@ -145,6 +150,28 @@
             </md-filled-button>
           </div>
           <div class="profile-grid" id="profile-grid"></div>
+        </section>
+
+        <section class="modpacks-main" id="modpacks-section" hidden>
+          <div class="modpacks-header">
+            <div>
+              <p class="card-kicker">MODRINTH MODPACKS</p>
+              <h2 class="modpacks-title" data-i18n="modpacks.title">ModPackを探す</h2>
+              <p class="modpacks-description" data-i18n="modpacks.description">Modrinthで公開されているModPackを検索します。</p>
+            </div>
+          </div>
+          <div class="modpacks-search-row">
+            <md-outlined-text-field
+              id="modpacks-search-input"
+              placeholder="ModPack名を検索（空欄は人気順）"
+              data-i18n-placeholder="modpacks.searchPlaceholder"
+            ></md-outlined-text-field>
+            <md-filled-button id="modpacks-search-button" type="button">
+              <span data-i18n="modpacks.search">検索</span>
+            </md-filled-button>
+          </div>
+          <md-linear-progress id="modpacks-progress" indeterminate hidden></md-linear-progress>
+          <div class="modpacks-results" id="modpacks-results" aria-live="polite"></div>
         </section>
 
         <div class="launch-status-bar" id="launch-status-bar" hidden>

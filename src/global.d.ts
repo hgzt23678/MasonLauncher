@@ -347,6 +347,10 @@ declare global {
         query: string,
         options?: ModrinthSearchOptions,
       ) => Promise<ModrinthSearchHit[]>;
+      modrinthSearchModpacks: (
+        query: string,
+        options?: Pick<ModrinthSearchOptions, 'limit' | 'offset'>,
+      ) => Promise<ModrinthSearchHit[]>;
       modrinthGetProject: (
         idOrSlug: string,
       ) => Promise<ModrinthProjectDetail>;
