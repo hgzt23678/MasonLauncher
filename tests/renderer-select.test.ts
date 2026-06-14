@@ -48,3 +48,24 @@ test('Login UI uses Material Web cards instead of custom card containers', async
     /@material\/web\/labs\/card\/outlined-card\.js/,
   );
 });
+
+test('Debug developer settings expose Client ID and Material theme controls', async () => {
+  const [html, rendererSource, mainSource, css] = await Promise.all([
+    fs.readFile(path.resolve('index.html'), 'utf8'),
+    fs.readFile(path.resolve('src', 'renderer.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'main.ts'), 'utf8'),
+    fs.readFile(path.resolve('src', 'index.css'), 'utf8'),
+  ]);
+
+  assert.match(html, /id="developer-settings"/);
+  assert.match(html, /id="developer-client-id-input"/);
+  assert.match(html, /id="developer-theme-color-input"/);
+  assert.match(rendererSource, /createMaterialThemeTokens/);
+  assert.match(rendererSource, /state\.buildConfiguration === 'debug'/);
+  assert.match(
+    mainSource,
+    /modCount:\s*await countEntries\(profileModsDirectory,\s*'file'\)/,
+  );
+  assert.match(css, /\.profile-grid\s*\{[^}]*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(css, /scrollbar-gutter:\s*stable/);
+});

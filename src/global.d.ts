@@ -99,6 +99,7 @@ type LaunchProfile = {
     title: string;
     iconUrl: string | null;
   }>;
+  modCount?: number;
   java: ProfileJavaSettings;
   /** Absolute path to the profile's isolated game directory. */
   instanceDir: string;
@@ -124,6 +125,7 @@ type LauncherState = {
     maxMemory: number;
     showDeveloperLogs: boolean;
     language: import('./i18n').LanguagePreference;
+    themeColor: string;
     microsoftClientId: string | null;
   };
   profiles: LaunchProfile[];

@@ -19,9 +19,14 @@ import {
   compareVersionsByRelease,
   filterSelectableVersions,
   formatVersionLabel,
+  resolveProfileModCount,
 } from './renderer-logic';
 import { isMicrosoftClientId } from './auth-config';
 import type { BuildConfiguration } from './build-configuration';
+import {
+  createMaterialThemeTokens,
+  normalizeThemeColor,
+} from './theme';
 import {
   resolveLanguage,
   translate,
@@ -177,6 +182,7 @@ type LaunchProfile = {
   minMemory: number;
   maxMemory: number;
   mods: ProfileMod[];
+  modCount?: number;
   java: ProfileJavaSettings;
   instanceDir: string;
 };
@@ -236,6 +242,7 @@ type LauncherState = {
     maxMemory: number;
     showDeveloperLogs: boolean;
     language: LanguagePreference;
+    themeColor: string;
     microsoftClientId: string | null;
   };
   profiles: LaunchProfile[];
@@ -348,6 +355,7 @@ const demoState: LauncherState = {
     maxMemory: 4096,
     showDeveloperLogs: true,
     language: 'system',
+    themeColor: '#9bd36f',
     microsoftClientId: '00000000-0000-0000-0000-000000000001',
   },
   profiles: [
@@ -364,6 +372,7 @@ const demoState: LauncherState = {
       minMemory: 1024,
       maxMemory: 4096,
       mods: [],
+      modCount: 0,
       java: defaultJavaSettings(),
       instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\default-profile',
     },
@@ -393,8 +402,43 @@ const demoState: LauncherState = {
           iconUrl: null,
         },
       ],
+      modCount: 2,
       java: defaultJavaSettings(),
       instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\forge-profile',
+    },
+    {
+      id: 'fabric-profile',
+      profileType: 'fabric',
+      loaderType: 'fabric',
+      minecraftVersion: '1.21.11',
+      loaderVersion: '0.16.14',
+      resolvedVersionId: 'fabric-loader-0.16.14-1.21.11',
+      name: 'Fabric Performance',
+      versionId: '1.21.11',
+      loader: 'fabric',
+      minMemory: 1024,
+      maxMemory: 4096,
+      mods: [],
+      modCount: 7,
+      java: defaultJavaSettings(),
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\fabric-profile',
+    },
+    {
+      id: 'neoforge-profile',
+      profileType: 'neoforge',
+      loaderType: 'neoforge',
+      minecraftVersion: '1.21.11',
+      loaderVersion: '21.11.38-beta',
+      resolvedVersionId: 'neoforge-21.11.38-beta',
+      name: 'NeoForge Modern',
+      versionId: '1.21.11',
+      loader: 'neoforge',
+      minMemory: 1024,
+      maxMemory: 6144,
+      mods: [],
+      modCount: 5,
+      java: defaultJavaSettings(),
+      instanceDir: 'C:\\Users\\Player\\AppData\\Roaming\\.minecraft\\mason-launcher\\profiles\\neoforge-profile',
     },
   ],
   selectedProfileId: 'forge-profile',
@@ -456,6 +500,9 @@ const api = window.launcher ?? {
     }
     if (typeof settings.language === 'string') {
       demoState.settings.language = settings.language as LanguagePreference;
+    }
+    if (typeof settings.themeColor === 'string') {
+      demoState.settings.themeColor = normalizeThemeColor(settings.themeColor);
     }
     return demoState;
   },
@@ -681,6 +728,27 @@ const developerLogSection = byId<HTMLElement>('developer-log-section');
 const developerLogToggle = byId<HTMLElement>('developer-log-toggle');
 const refreshLogsButton = byId<HTMLElement>('refresh-logs-button');
 const clearLogsButton = byId<HTMLElement>('clear-logs-button');
+const developerSettingsCaption = byId<HTMLElement>(
+  'developer-settings-caption',
+);
+const developerSettings = byId<HTMLElement>('developer-settings');
+const developerClientIdInput = byId<HTMLElement>(
+  'developer-client-id-input',
+);
+const developerClientIdSave = byId<HTMLElement>('developer-client-id-save');
+const developerClientIdStatus = byId<HTMLElement>(
+  'developer-client-id-status',
+);
+const developerThemeColorInput = byId<HTMLElement>(
+  'developer-theme-color-input',
+);
+const developerThemeColorSave = byId<HTMLElement>(
+  'developer-theme-color-save',
+);
+const developerThemeColorStatus = byId<HTMLElement>(
+  'developer-theme-color-status',
+);
+const themeColorPreview = byId<HTMLElement>('theme-color-preview');
 const openFolderButton = byId<HTMLElement>('open-folder-button');
 const changeFolderButton = byId<HTMLElement>('change-folder-button');
 const directoryPath = byId<HTMLElement>('directory-path');
@@ -859,6 +927,19 @@ const setDeveloperLogsVisible = (visible: boolean) => {
   developerLogSection?.toggleAttribute('hidden', !visible);
 };
 
+const applyThemeColor = (value: unknown) => {
+  const normalized = normalizeThemeColor(value);
+  for (const [name, color] of Object.entries(
+    createMaterialThemeTokens(normalized),
+  )) {
+    document.documentElement.style.setProperty(name, color);
+  }
+  if (themeColorPreview) {
+    themeColorPreview.style.backgroundColor = normalized;
+  }
+  return normalized;
+};
+
 const showToast = (message: string, isError = false) => {
   if (!toast) {
     return;
@@ -981,6 +1062,7 @@ const createProfileCard = (profile: LaunchProfile) => {
   const isActive = profile.id === currentState?.selectedProfileId;
   const modded = isModLoader(profile.loaderType);
   const displayLoader = loaderLabel(profile.loaderType);
+  const profileModCount = resolveProfileModCount(profile);
   const versionInfo = currentState?.availableVersions.find(
     (v) => v.id === profile.minecraftVersion,
   );
@@ -1014,10 +1096,10 @@ const createProfileCard = (profile: LaunchProfile) => {
   loaderBadge.className = `badge badge-loader${modded ? ' forge' : ''}`;
   loaderBadge.textContent = displayLoader.toUpperCase();
   badges.append(loaderBadge);
-  if (profile.mods.length > 0) {
+  if (profileModCount > 0) {
     const modBadge = document.createElement('span');
     modBadge.className = 'badge badge-mods';
-    modBadge.textContent = `${profile.mods.length} MOD`;
+    modBadge.textContent = `${profileModCount} MOD`;
     badges.append(modBadge);
   }
 
@@ -1198,6 +1280,7 @@ const populateVersionSelect = (
 const renderState = (state: LauncherState) => {
   currentLanguage = resolveLanguage(state.settings.language, navigator.languages);
   applyDocumentTranslations();
+  const themeColor = applyThemeColor(state.settings.themeColor);
   currentState = state;
   if (directoryPath) {
     directoryPath.textContent = state.gameDirectory;
@@ -1229,9 +1312,24 @@ const renderState = (state: LauncherState) => {
   }
   const showDebugClientId = state.buildConfiguration === 'debug';
   debugClientIdPanel?.toggleAttribute('hidden', !showDebugClientId);
+  developerSettingsCaption?.toggleAttribute('hidden', !showDebugClientId);
+  developerSettings?.toggleAttribute('hidden', !showDebugClientId);
   if (debugClientIdInput && document.activeElement !== debugClientIdInput) {
     (debugClientIdInput as MdEl).value =
       state.settings.microsoftClientId ?? '';
+  }
+  if (
+    developerClientIdInput &&
+    document.activeElement !== developerClientIdInput
+  ) {
+    (developerClientIdInput as MdEl).value =
+      state.settings.microsoftClientId ?? '';
+  }
+  if (
+    developerThemeColorInput &&
+    document.activeElement !== developerThemeColorInput
+  ) {
+    (developerThemeColorInput as MdEl).value = themeColor;
   }
   setDeveloperLogsVisible(state.settings.showDeveloperLogs);
   renderProfileGrid();
@@ -2329,47 +2427,119 @@ const renderAuthFlow = (flow: AuthFlowState) => {
   }
 };
 
-const setDebugClientIdStatus = (message: string, isError = false) => {
-  if (!debugClientIdStatus) return;
-  debugClientIdStatus.textContent = message;
-  debugClientIdStatus.classList.toggle('error', isError);
+const setFieldStatus = (
+  target: HTMLElement | null,
+  message: string,
+  isError = false,
+) => {
+  if (!target) return;
+  target.textContent = message;
+  target.classList.toggle('error', isError);
 };
 
-const saveDebugClientId = async () => {
+const saveDebugClientId = async (
+  input: HTMLElement | null,
+  button: HTMLElement | null,
+  status: HTMLElement | null,
+) => {
   if (
     !currentState ||
     currentState.buildConfiguration !== 'debug' ||
-    !debugClientIdSave
+    !button
   ) {
     return;
   }
-  const clientId = String((debugClientIdInput as MdEl)?.value ?? '').trim();
+  const clientId = String((input as MdEl)?.value ?? '').trim();
   if (!isMicrosoftClientId(clientId)) {
-    setDebugClientIdStatus(t('login.clientIdInvalid'), true);
+    setFieldStatus(status, t('login.clientIdInvalid'), true);
     return;
   }
-  (debugClientIdSave as MdEl).disabled = true;
-  setDebugClientIdStatus('');
+  (button as MdEl).disabled = true;
+  setFieldStatus(status, '');
   try {
     renderState(await api.configureMicrosoftClientId(clientId));
-    setDebugClientIdStatus(t('login.clientIdSaved'));
+    setFieldStatus(status, t('login.clientIdSaved'));
   } catch (error) {
-    setDebugClientIdStatus(
+    setFieldStatus(
+      status,
       error instanceof Error ? error.message : t('settings.saveFailed'),
       true,
     );
   } finally {
-    (debugClientIdSave as MdEl).disabled = false;
+    (button as MdEl).disabled = false;
   }
 };
 
 debugClientIdSave?.addEventListener('click', () => {
-  void saveDebugClientId();
+  void saveDebugClientId(
+    debugClientIdInput,
+    debugClientIdSave,
+    debugClientIdStatus,
+  );
 });
 
 debugClientIdInput?.addEventListener('keydown', (event) => {
   if ((event as KeyboardEvent).key === 'Enter') {
-    void saveDebugClientId();
+    void saveDebugClientId(
+      debugClientIdInput,
+      debugClientIdSave,
+      debugClientIdStatus,
+    );
+  }
+});
+
+developerClientIdSave?.addEventListener('click', () => {
+  void saveDebugClientId(
+    developerClientIdInput,
+    developerClientIdSave,
+    developerClientIdStatus,
+  );
+});
+
+developerClientIdInput?.addEventListener('keydown', (event) => {
+  if ((event as KeyboardEvent).key === 'Enter') {
+    void saveDebugClientId(
+      developerClientIdInput,
+      developerClientIdSave,
+      developerClientIdStatus,
+    );
+  }
+});
+
+developerThemeColorInput?.addEventListener('input', () => {
+  const value = String((developerThemeColorInput as MdEl).value ?? '');
+  if (/^#[0-9a-fA-F]{6}$/.test(value.trim())) {
+    applyThemeColor(value);
+    setFieldStatus(developerThemeColorStatus, '');
+  }
+});
+
+developerThemeColorSave?.addEventListener('click', async () => {
+  if (currentState?.buildConfiguration !== 'debug') return;
+  const value = String((developerThemeColorInput as MdEl)?.value ?? '').trim();
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) {
+    setFieldStatus(
+      developerThemeColorStatus,
+      t('settings.themeColorInvalid'),
+      true,
+    );
+    return;
+  }
+  (developerThemeColorSave as MdEl).disabled = true;
+  try {
+    renderState(await api.saveSettings({ themeColor: value }));
+    setFieldStatus(
+      developerThemeColorStatus,
+      t('settings.themeColorSaved'),
+    );
+  } catch (error) {
+    setFieldStatus(
+      developerThemeColorStatus,
+      error instanceof Error ? error.message : t('settings.saveFailed'),
+      true,
+    );
+  } finally {
+    (developerThemeColorSave as MdEl).disabled = false;
   }
 });
 

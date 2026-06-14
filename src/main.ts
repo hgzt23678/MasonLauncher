@@ -56,6 +56,7 @@ import {
   normalizeLanguagePreference,
   type LanguagePreference,
 } from './i18n';
+import { DEFAULT_THEME_COLOR, normalizeThemeColor } from './theme';
 
 type ProfileLoader = 'vanilla' | ModLoaderType;
 
@@ -65,6 +66,7 @@ type LauncherSettings = {
   maxMemory: number;
   showDeveloperLogs: boolean;
   language: LanguagePreference;
+  themeColor: string;
   microsoftClientId: string;
   profiles: LaunchProfile[];
   selectedProfileId: string;
@@ -232,6 +234,7 @@ const defaultSettings = (): LauncherSettings => ({
   maxMemory: 4096,
   showDeveloperLogs: developerLogsVisibleByDefault(buildConfiguration),
   language: 'system',
+  themeColor: DEFAULT_THEME_COLOR,
   microsoftClientId: __MICROSOFT_CLIENT_ID__.trim(),
   profiles: [
     {
@@ -394,6 +397,7 @@ const readSettings = async (): Promise<LauncherSettings> => {
           ? value.showDeveloperLogs
           : defaults.showDeveloperLogs,
       language: normalizeLanguagePreference(value.language),
+      themeColor: normalizeThemeColor(value.themeColor),
       microsoftClientId: resolveMicrosoftClientId(
         value.microsoftClientId,
         defaults.microsoftClientId,
@@ -901,6 +905,19 @@ const getLauncherState = async () => {
   if (settingsChanged) {
     await writeSettings(settings);
   }
+  const profiles = await Promise.all(
+    settings.profiles.map(async (profile) => {
+      const instanceDirectory = await resolveInstanceDirectory(profile);
+      const profileModsDirectory = await ensureInstanceSubdirectory(
+        instanceDirectory,
+        'mods',
+      );
+      return {
+        ...profile,
+        modCount: await countEntries(profileModsDirectory, 'file'),
+      };
+    }),
+  );
 
   return {
     buildConfiguration,
@@ -920,11 +937,12 @@ const getLauncherState = async () => {
       maxMemory: settings.maxMemory,
       showDeveloperLogs: settings.showDeveloperLogs,
       language: settings.language,
+      themeColor: settings.themeColor,
       microsoftClientId: canConfigureClientId
         ? settings.microsoftClientId
         : null,
     },
-    profiles: settings.profiles,
+    profiles,
     selectedProfileId: settings.selectedProfileId,
     gameRunning: minecraftService.isRunning(),
   };
@@ -1068,6 +1086,9 @@ const registerIpcHandlers = () => {
     }
     if (typeof update.language === 'string') {
       settings.language = normalizeLanguagePreference(update.language);
+    }
+    if (typeof update.themeColor === 'string' && !isReleaseBuild) {
+      settings.themeColor = normalizeThemeColor(update.themeColor);
     }
     await writeSettings(settings);
     return getLauncherState();

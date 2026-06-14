@@ -47,3 +47,11 @@ export const compareVersionsByRelease = (
     sensitivity: 'base',
   });
 };
+
+export const resolveProfileModCount = (profile: {
+  modCount?: number;
+  mods: readonly unknown[];
+}) =>
+  typeof profile.modCount === 'number' && Number.isFinite(profile.modCount)
+    ? Math.max(0, Math.floor(profile.modCount))
+    : profile.mods.length;
