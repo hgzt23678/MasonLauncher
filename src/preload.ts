@@ -58,6 +58,12 @@ contextBridge.exposeInMainWorld('launcher', {
     options?: Record<string, unknown>,
   ) =>
     ipcRenderer.invoke('modrinth:search-modpacks', query, options ?? {}),
+  modrinthInstallModpack: (projectId: string, versionId?: string) =>
+    ipcRenderer.invoke(
+      'modrinth:install-modpack',
+      projectId,
+      versionId ?? null,
+    ),
   modrinthGetProject: (idOrSlug: string) =>
     ipcRenderer.invoke('modrinth:get-project', idOrSlug),
   modrinthGetVersions: (
@@ -111,4 +117,6 @@ contextBridge.exposeInMainWorld('launcher', {
   onLog: (callback: EventCallback) => subscribe('launcher:log', callback),
   onModrinthDownloadProgress: (callback: EventCallback) =>
     subscribe('modrinth:download-progress', callback),
+  onModrinthModpackInstallProgress: (callback: EventCallback) =>
+    subscribe('modrinth:modpack-install-progress', callback),
 });

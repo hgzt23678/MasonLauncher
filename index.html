@@ -45,7 +45,7 @@
         <md-outlined-card class="debug-client-id-panel" id="debug-client-id-panel" hidden>
           <header class="material-card-heading">
             <strong data-i18n="login.clientIdTitle">Debug: Microsoft Entra Client ID</strong>
-            <md-assist-chip label="Debug" soft-disabled></md-assist-chip>
+            <md-assist-chip label="Developer" soft-disabled></md-assist-chip>
           </header>
           <p data-i18n="login.clientIdDescription">
             開発用のApplication (client) IDを設定ファイルへ保存します。
@@ -166,8 +166,6 @@
                 class="modpacks-search-field"
                 id="modpacks-search-input"
                 type="search"
-                label="ModPack名を検索（空欄は人気順）"
-                data-i18n-label="modpacks.searchPlaceholder"
                 placeholder="ModPack名を検索（空欄は人気順）"
                 data-i18n-placeholder="modpacks.searchPlaceholder"
               >
@@ -344,12 +342,22 @@
             </div>
           </md-filled-card>
 
+          <md-filled-card class="settings-card developer-mode-card">
+            <div class="developer-log-toggle-row">
+              <div>
+                <strong data-i18n="settings.developerMode">開発者モード</strong>
+                <small data-i18n="settings.developerModeDescription">開発者設定と診断ログを表示します。</small>
+              </div>
+              <md-switch id="developer-mode-toggle" aria-label="開発者モード" data-i18n-aria-label="settings.developerMode"></md-switch>
+            </div>
+          </md-filled-card>
+
           <md-outlined-card class="settings-card developer-settings" id="developer-settings" hidden>
             <div class="material-card-heading">
               <strong data-i18n="settings.developerSettings">開発者設定</strong>
-              <md-assist-chip label="Debug" soft-disabled></md-assist-chip>
+              <md-assist-chip label="Developer" soft-disabled></md-assist-chip>
             </div>
-            <p data-i18n="settings.developerSettingsDescription">Debugビルド専用の認証と表示テーマを設定します。</p>
+            <p data-i18n="settings.developerSettingsDescription">開発者モード用の認証と表示テーマを設定します。</p>
             <md-outlined-text-field
               id="developer-client-id-input"
               label="Microsoft Entra Client ID"
@@ -381,7 +389,7 @@
             <small id="developer-theme-color-status" aria-live="polite"></small>
           </md-outlined-card>
 
-          <md-filled-card class="settings-card developer-log-preferences-card">
+          <md-filled-card class="settings-card developer-log-preferences-card" id="developer-log-preferences" hidden>
             <div class="developer-log-toggle-row">
               <div>
                 <strong data-i18n="settings.developerLogs">開発者ログ</strong>

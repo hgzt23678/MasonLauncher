@@ -64,6 +64,7 @@ type LauncherSettings = {
   gameDirectory: string;
   minMemory: number;
   maxMemory: number;
+  developerMode: boolean;
   showDeveloperLogs: boolean;
   language: LanguagePreference;
   themeColor: string;
@@ -95,11 +96,13 @@ let authService: AuthService;
 let minecraftService: MinecraftService;
 let javaRuntimeService: JavaRuntimeService;
 let launchWorkflowInProgress = false;
+let modpackInstallInProgress = false;
 const buildConfiguration = normalizeBuildConfiguration(
   __BUILD_CONFIGURATION__,
 );
 const isReleaseBuild = buildConfiguration === 'release';
-const canConfigureClientId = clientIdConfigurationEnabled(buildConfiguration);
+const canShowDeveloperSettings = (settings: LauncherSettings) =>
+  clientIdConfigurationEnabled(buildConfiguration) || settings.developerMode;
 const diagnostics = new LauncherDiagnostics((entry) => {
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('launcher:log', entry);
@@ -232,6 +235,7 @@ const defaultSettings = (): LauncherSettings => ({
   gameDirectory: defaultGameDirectory(),
   minMemory: 1024,
   maxMemory: 4096,
+  developerMode: false,
   showDeveloperLogs: developerLogsVisibleByDefault(buildConfiguration),
   language: 'system',
   themeColor: DEFAULT_THEME_COLOR,
@@ -392,6 +396,10 @@ const readSettings = async (): Promise<LauncherSettings> => {
           : defaults.gameDirectory,
       minMemory,
       maxMemory,
+      developerMode:
+        typeof value.developerMode === 'boolean'
+          ? value.developerMode
+          : defaults.developerMode,
       showDeveloperLogs:
         typeof value.showDeveloperLogs === 'boolean'
           ? value.showDeveloperLogs
@@ -921,6 +929,7 @@ const getLauncherState = async () => {
 
   return {
     buildConfiguration,
+    canShowDeveloperSettings: canShowDeveloperSettings(settings),
     gameDirectory: settings.gameDirectory,
     directoryExists,
     versions: installedVersions
@@ -935,10 +944,11 @@ const getLauncherState = async () => {
     settings: {
       minMemory: settings.minMemory,
       maxMemory: settings.maxMemory,
+      developerMode: settings.developerMode,
       showDeveloperLogs: settings.showDeveloperLogs,
       language: settings.language,
       themeColor: settings.themeColor,
-      microsoftClientId: canConfigureClientId
+      microsoftClientId: canShowDeveloperSettings(settings)
         ? settings.microsoftClientId
         : null,
     },
@@ -973,8 +983,14 @@ const registerIpcHandlers = () => {
 
   trustedIpc.handle('launcher:open-directory', async () => {
     const settings = await readSettings();
-    await fs.mkdir(settings.gameDirectory, { recursive: true });
-    const error = await shell.openPath(settings.gameDirectory);
+    const selectedProfile = settings.profiles.find(
+      (profile) => profile.id === settings.selectedProfileId,
+    );
+    const targetDirectory = selectedProfile
+      ? await resolveInstanceDirectory(selectedProfile)
+      : managedInstancesRoot();
+    await fs.mkdir(targetDirectory, { recursive: true });
+    const error = await shell.openPath(targetDirectory);
     return error
       ? { ok: false, message: error }
       : { ok: true, message: 'ゲームフォルダーを開きました。' };
@@ -1081,13 +1097,23 @@ const registerIpcHandlers = () => {
         Math.round(update.maxMemory),
       );
     }
+    if (typeof update.developerMode === 'boolean') {
+      settings.developerMode = update.developerMode;
+      if (!settings.developerMode && isReleaseBuild) {
+        settings.showDeveloperLogs = false;
+      }
+    }
     if (typeof update.showDeveloperLogs === 'boolean') {
-      settings.showDeveloperLogs = update.showDeveloperLogs;
+      settings.showDeveloperLogs =
+        canShowDeveloperSettings(settings) && update.showDeveloperLogs;
     }
     if (typeof update.language === 'string') {
       settings.language = normalizeLanguagePreference(update.language);
     }
-    if (typeof update.themeColor === 'string' && !isReleaseBuild) {
+    if (
+      typeof update.themeColor === 'string' &&
+      canShowDeveloperSettings(settings)
+    ) {
       settings.themeColor = normalizeThemeColor(update.themeColor);
     }
     await writeSettings(settings);
@@ -1097,7 +1123,8 @@ const registerIpcHandlers = () => {
   trustedIpc.handle(
     'auth:configure-client-id',
     async (_event, input: unknown) => {
-      if (!canConfigureClientId) {
+      const settings = await readSettings();
+      if (!canShowDeveloperSettings(settings)) {
         throw new Error(
           'Microsoft Client IDはDebugビルドからのみ変更できます。',
         );
@@ -1108,7 +1135,6 @@ const registerIpcHandlers = () => {
           'Microsoft Entraのアプリケーション（クライアント）IDをGUID形式で入力してください。',
         );
       }
-      const settings = await readSettings();
       await authService.configure(clientId);
       settings.microsoftClientId = clientId;
       await writeSettings(settings);
@@ -1437,6 +1463,179 @@ const registerIpcHandlers = () => {
         limit: options.limit,
         offset: options.offset,
       });
+    },
+  );
+
+  trustedIpc.handle(
+    'modrinth:install-modpack',
+    async (
+      event,
+      projectIdInput: unknown,
+      versionIdInput: unknown,
+    ) => {
+      if (
+        typeof projectIdInput !== 'string' ||
+        !projectIdInput.trim() ||
+        (versionIdInput !== undefined &&
+          versionIdInput !== null &&
+          typeof versionIdInput !== 'string')
+      ) {
+        throw new Error('Modpackのプロジェクトまたはバージョン指定が不正です。');
+      }
+      if (
+        launchWorkflowInProgress ||
+        minecraftService.isRunning() ||
+        modpackInstallInProgress
+      ) {
+        throw new Error(
+          'Minecraft の起動処理中、または別のModpackのインストール中です。',
+        );
+      }
+      const projectId = projectIdInput.trim();
+      const versionId =
+        typeof versionIdInput === 'string' && versionIdInput.trim()
+          ? versionIdInput.trim()
+          : undefined;
+      const profileId = randomUUID();
+      let instanceDirectory: string | undefined;
+      let profilePersisted = false;
+      let terminalPhase: 'complete' | 'error' = 'error';
+      let terminalMessage = 'Modpack installation failed.';
+      modpackInstallInProgress = true;
+      try {
+        instanceDirectory = await ensureManagedInstanceDirectory(
+          managedInstancesRoot(),
+          profileId,
+        );
+        const installed = await modrinthService.installModpack(
+          {
+            instanceDirectory,
+            projectId,
+            versionId,
+          },
+          event.sender,
+        );
+        const settings = await readSettings();
+        const loader = installed.loader;
+        if (loader !== 'vanilla' && !installed.loaderVersion) {
+          throw new Error(
+            `Modpackの${loader}バージョンを解決できませんでした。`,
+          );
+        }
+        const resolvedVersionId =
+          loader === 'vanilla'
+            ? installed.minecraftVersion
+            : resolvedModLoaderVersionId(
+                loader,
+                installed.minecraftVersion,
+                installed.loaderVersion as string,
+              );
+        const profile: LaunchProfile = {
+          id: profileId,
+          name: installed.name.slice(0, 40),
+          profileType: loader,
+          loaderType: loader,
+          minecraftVersion: installed.minecraftVersion,
+          loaderVersion: installed.loaderVersion,
+          resolvedVersionId,
+          versionId: installed.minecraftVersion,
+          loader,
+          minMemory: settings.minMemory,
+          maxMemory: settings.maxMemory,
+          mods: [],
+          java: normalizeJavaSettings(undefined),
+          instanceDir: defaultInstanceDir(profileId),
+        };
+        settings.profiles.push(profile);
+        settings.selectedProfileId = profile.id;
+        await writeSettings(settings);
+        profilePersisted = true;
+        terminalPhase = 'complete';
+        terminalMessage = `${profile.name}をインストールしました。`;
+        return {
+          profileId,
+          profileName: profile.name,
+          state: await getLauncherState(),
+        };
+      } catch (error) {
+        if (instanceDirectory && !profilePersisted) {
+          try {
+            await fs.rm(path.dirname(instanceDirectory), {
+              recursive: true,
+              force: true,
+            });
+          } catch (cleanupError) {
+            log('warn', 'mods', '失敗したModpackインスタンスを削除できませんでした。', {
+              instanceDirectory,
+              code:
+                cleanupError &&
+                typeof cleanupError === 'object' &&
+                'code' in cleanupError
+                  ? String(cleanupError.code)
+                  : null,
+              message:
+                cleanupError instanceof Error
+                  ? cleanupError.message
+                  : String(cleanupError),
+            });
+          }
+        }
+        const errorCode =
+          error && typeof error === 'object' && 'code' in error
+            ? String(error.code)
+            : null;
+        const errorPath =
+          error && typeof error === 'object' && 'path' in error
+            ? String(error.path)
+            : null;
+        const errorKind =
+          error && typeof error === 'object' && 'kind' in error
+            ? String(error.kind)
+            : null;
+        const errorDetail =
+          error && typeof error === 'object' && 'detail' in error
+            ? error.detail
+            : null;
+        terminalMessage = [
+          error instanceof Error ? error.message : String(error),
+          errorKind ? `kind=${errorKind}` : '',
+          errorCode ? `code=${errorCode}` : '',
+          errorPath ? `path=${errorPath}` : '',
+          errorDetail ? `detail=${JSON.stringify(errorDetail)}` : '',
+        ]
+          .filter(Boolean)
+          .join(' / ');
+        log('error', 'mods', 'Modrinth Modpackのインストールに失敗しました。', {
+          projectId,
+          versionId: versionId ?? null,
+          message: terminalMessage,
+          kind: errorKind,
+          code: errorCode,
+          path: errorPath,
+          detail: errorDetail,
+        });
+        throw new Error(terminalMessage, { cause: error });
+      } finally {
+        modpackInstallInProgress = false;
+        if (!event.sender.isDestroyed()) {
+          try {
+            event.sender.send('modrinth:modpack-install-progress', {
+              projectId,
+              versionId: versionId ?? null,
+              phase: terminalPhase,
+              percent: terminalPhase === 'complete' ? 100 : 0,
+              done: true,
+              message: terminalMessage,
+            });
+          } catch (error) {
+            log('warn', 'mods', 'Modpack進捗の終了通知に失敗しました。', {
+              projectId,
+              phase: terminalPhase,
+              message: error instanceof Error ? error.message : String(error),
+            });
+          }
+        }
+      }
     },
   );
 

@@ -299,8 +299,13 @@ export const repairJavaRuntimeManifestFiles = async (
 };
 
 export class MinecraftService {
+  private static readonly manifestCacheTtlMs = 10 * 60 * 1000;
   private launchInProgress = false;
   private installInProgress = false;
+  private manifestCache:
+    | { expiresAt: number; versions: MinecraftVersion[] }
+    | undefined;
+  private manifestRequest: Promise<MinecraftVersion[]> | undefined;
   private readonly downloader: MinecraftDownloader;
   private readonly resolver: MinecraftLaunchResolver;
   private readonly runner: MinecraftProcessRunner;
@@ -347,8 +352,32 @@ export class MinecraftService {
     this.report(sender, progress);
   }
 
-  async getRemoteVersions() {
-    return (await this.downloader.getManifest()) as MinecraftVersion[];
+  getRemoteVersions(): Promise<MinecraftVersion[]> {
+    const now = Date.now();
+    if (this.manifestCache && this.manifestCache.expiresAt > now) {
+      return Promise.resolve(this.manifestCache.versions);
+    }
+    if (this.manifestRequest) {
+      return this.manifestRequest;
+    }
+    this.manifestRequest = this.downloader
+      .getManifest()
+      .then((versions) => {
+        const value = versions as MinecraftVersion[];
+        this.manifestCache = {
+          expiresAt: Date.now() + MinecraftService.manifestCacheTtlMs,
+          versions: value,
+        };
+        return value;
+      })
+      .catch((error) => {
+        this.manifestCache = undefined;
+        throw error;
+      })
+      .finally(() => {
+        this.manifestRequest = undefined;
+      });
+    return this.manifestRequest;
   }
 
   async getForgeBuilds(minecraftVersion: string) {
