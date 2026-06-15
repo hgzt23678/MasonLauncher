@@ -1189,41 +1189,6 @@ export class JavaRuntimeService {
     onEntry?: (processed: number, total: number) => void,
   ) {
     if (archivePath.endsWith('.zip')) {
-      if (this.platform === 'win32') {
-        const zip = await open(archivePath, {
-          lazyEntries: true,
-          autoClose: false,
-        });
-        let entries = 0;
-        try {
-          const root = path.resolve(destination);
-          for await (const entry of walkEntriesGenerator(zip)) {
-            const target = path.resolve(root, entry.fileName);
-            if (target !== root && !target.startsWith(`${root}${path.sep}`)) {
-              throw new MinecraftError(
-                'Java archive contains an unsafe path.',
-                'java',
-                'JAVA_ARCHIVE_UNSAFE_PATH',
-                { entry: entry.fileName },
-              );
-            }
-            entries += 1;
-          }
-        } finally {
-          zip.close();
-        }
-        await fs.mkdir(destination, { recursive: true });
-        await execFileAsync(
-          'tar',
-          ['-xf', archivePath, '-C', destination],
-          {
-            windowsHide: true,
-            timeout: 300_000,
-          },
-        );
-        onEntry?.(entries, entries);
-        return;
-      }
       const zip = await open(archivePath, {
         lazyEntries: true,
         autoClose: false,

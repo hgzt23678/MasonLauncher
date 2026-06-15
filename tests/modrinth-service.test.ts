@@ -366,8 +366,8 @@ test('.mrpackを検証して新規instanceへ展開する', async (t) => {
   index.files[0].downloads = [`${server.baseUrl}/download/example.jar`];
   index.files[1].downloads = [`${server.baseUrl}/download/server-only.jar`];
   const overrideEntries: Record<string, Buffer | string> = {
-    'overrides/config/example.txt': 'base override',
     'client-overrides/config/example.txt': 'client override',
+    'overrides/config/example.txt': 'base override',
     'client-overrides/options.txt': 'fov:90',
   };
   for (let index = 0; index < 37; index += 1) {
@@ -450,7 +450,8 @@ test('.mrpackを検証して新規instanceへ展開する', async (t) => {
       (entry) =>
         entry.phase === 'overrides' &&
         entry.file === 'resourcepacks/Mod Menu Helper.zip' &&
-        entry.percent === 98,
+        entry.percent === 98 &&
+        entry.message === 'Applying Modpack override',
     ),
   );
   assert.ok(progress.some((entry) => entry.phase === 'profile'));
