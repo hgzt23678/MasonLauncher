@@ -682,6 +682,37 @@ md-assist-chip {
   overflow: hidden;
 }
 
+.screenshot-figure {
+  position: relative;
+  min-height: 0;
+  margin: 0;
+  background: #0c0e13;
+}
+
+.screenshot-figure::after {
+  position: absolute;
+  inset: 45% 0 0;
+  content: "";
+  background: linear-gradient(transparent, rgba(5, 10, 7, 0.82));
+  pointer-events: none;
+}
+
+.screenshot-figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+}
+
+.screenshot-log img {
+  aspect-ratio: auto;
+}
+
+.screenshot-figure .placeholder-label {
+  z-index: 1;
+}
+
 .screenshot-placeholder {
   position: relative;
   min-height: 310px;
