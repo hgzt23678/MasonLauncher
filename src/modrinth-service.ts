@@ -33,6 +33,7 @@ const defaultDownloadHosts = [
 const maxModpackIndexBytes = 2 * 1024 * 1024;
 const overrideCopyTimeoutMs = 120_000;
 const maxBufferedOverrideBytes = 16 * 1024 * 1024;
+const maxBufferedModpackArchiveBytes = 32 * 1024 * 1024;
 
 type LogWriter = (
   level: LauncherLogLevel,
@@ -1291,15 +1292,21 @@ export class ModrinthService {
       sender?: WebContents;
     },
   ) {
-    const zip = await open(archivePath, {
-      lazyEntries: true,
-      autoClose: false,
-    });
-    const entries: Array<{
-      entry: Parameters<typeof openEntryReadStream>[1];
-      prefix: 'overrides/' | 'client-overrides/';
-      relative: string;
-    }> = [];
+    const archiveStat = await fs.stat(archivePath);
+    const archiveSource: string | Buffer =
+      archiveStat.size <= maxBufferedModpackArchiveBytes
+        ? await fs.readFile(archivePath)
+        : archivePath;
+    const openArchive = () =>
+      open(archiveSource, {
+        lazyEntries: true,
+        autoClose: false,
+      });
+    const prefixes = [
+      'overrides/',
+      'client-overrides/',
+    ] as const;
+    let totalFiles = 0;
     let copied = 0;
     let baseOverrides = 0;
     let clientOverrides = 0;
@@ -1307,11 +1314,12 @@ export class ModrinthService {
       path.resolve(instanceDirectory),
       path.resolve(archivePath),
     );
+    const scanZip = await openArchive();
     try {
       let scanTimeout: NodeJS.Timeout | undefined;
       await Promise.race([
         (async () => {
-          for await (const entry of walkEntriesGenerator(zip)) {
+          for await (const entry of walkEntriesGenerator(scanZip)) {
             const normalized = entry.fileName.replaceAll('\\', '/');
             if (normalized.endsWith('/')) continue;
             const prefix = normalized.startsWith('client-overrides/')
@@ -1320,16 +1328,16 @@ export class ModrinthService {
                 ? 'overrides/'
                 : null;
             if (!prefix) continue;
-            entries.push({
-              entry,
-              prefix,
-              relative: normalized.slice(prefix.length),
-            });
+            this.safeInstanceFilePath(
+              instanceDirectory,
+              normalized.slice(prefix.length),
+            );
+            totalFiles += 1;
           }
         })(),
         new Promise<never>((_resolve, reject) => {
           scanTimeout = setTimeout(() => {
-            zip.close();
+            scanZip.close();
             reject(
               new ModrinthError(
                 'Modpack overrides scan timed out.',
@@ -1340,95 +1348,111 @@ export class ModrinthService {
           }, overrideCopyTimeoutMs);
         }),
       ]).finally(() => clearTimeout(scanTimeout));
-
-      this.log('info', 'mods', 'Modpack overrides application started.', {
-        sourcePath: archivePath,
-        destinationPath: instanceDirectory,
-        totalFiles: entries.length,
-        archiveInsideDestination:
-          archiveRelativeToDestination !== '' &&
-          !archiveRelativeToDestination.startsWith(`..${path.sep}`) &&
-          archiveRelativeToDestination !== '..' &&
-          !path.isAbsolute(archiveRelativeToDestination),
-      });
-
-      for (const item of entries) {
-        const sourcePath = `${archivePath}!/${item.prefix}${item.relative}`;
-        const destination = this.safeInstanceFilePath(
-          instanceDirectory,
-          item.relative,
-        );
-        const destinationDirectory = path.dirname(destination);
-        this.log('info', 'mods', 'Copying Modpack override entry.', {
-          sourcePath,
-          destinationPath: destination,
-          relativePath: item.relative,
-          totalFiles: entries.length,
-          currentFile: copied + 1,
-        });
-        try {
-          await fs.mkdir(destinationDirectory, { recursive: true });
-          this.log('debug', 'mods', 'Modpack override directory created.', {
-            destinationPath: destinationDirectory,
-            relativePath: item.relative,
-          });
-          this.sendModpackProgress(options.sender, {
-            projectId: options.projectId,
-            versionId: options.versionId,
-            phase: 'overrides',
-            file: item.relative,
-            percent:
-              90 +
-              Math.round((copied / Math.max(1, entries.length)) * 9),
-            message: `Applying Modpack override: ${item.relative}`,
-          });
-          await this.writeArchiveEntry(zip, item.entry, destination);
-          copied += 1;
-          if (item.prefix === 'overrides/') {
-            baseOverrides += 1;
-          } else {
-            clientOverrides += 1;
-          }
-          this.log('info', 'mods', 'Modpack override entry copied.', {
-            sourcePath,
-            destinationPath: destination,
-            relativePath: item.relative,
-            totalFiles: entries.length,
-            copiedFiles: copied,
-          });
-          this.sendModpackProgress(options.sender, {
-            projectId: options.projectId,
-            versionId: options.versionId,
-            phase: 'overrides',
-            file: item.relative,
-            percent:
-              90 +
-              Math.round((copied / Math.max(1, entries.length)) * 9),
-            message: `Applying Modpack override: ${item.relative}`,
-          });
-        } catch (error) {
-          this.log('error', 'mods', 'Modpack override entry copy failed.', {
-            sourcePath,
-            destinationPath: destination,
-            relativePath: item.relative,
-            errorCode:
-              error && typeof error === 'object' && 'code' in error
-                ? String(error.code)
-                : 'UNKNOWN',
-            errorMessage:
-              error instanceof Error ? error.message : String(error),
-          });
-          throw error;
-        }
-      }
     } finally {
-      zip.close();
+      scanZip.close();
+    }
+
+    this.log('info', 'mods', 'Modpack overrides application started.', {
+      sourcePath: archivePath,
+      destinationPath: instanceDirectory,
+      totalFiles,
+      archiveMode: Buffer.isBuffer(archiveSource) ? 'memory' : 'file',
+      archiveInsideDestination:
+        archiveRelativeToDestination !== '' &&
+        !archiveRelativeToDestination.startsWith(`..${path.sep}`) &&
+        archiveRelativeToDestination !== '..' &&
+        !path.isAbsolute(archiveRelativeToDestination),
+    });
+
+    for (const prefix of prefixes) {
+      const zip = await openArchive();
+      try {
+        for await (const entry of walkEntriesGenerator(zip)) {
+          const normalized = entry.fileName.replaceAll('\\', '/');
+          if (
+            normalized.endsWith('/') ||
+            !normalized.startsWith(prefix)
+          ) {
+            continue;
+          }
+          const relative = normalized.slice(prefix.length);
+          const sourcePath = `${archivePath}!/${prefix}${relative}`;
+          const destination = this.safeInstanceFilePath(
+            instanceDirectory,
+            relative,
+          );
+          const destinationDirectory = path.dirname(destination);
+          this.log('info', 'mods', 'Copying Modpack override entry.', {
+            sourcePath,
+            destinationPath: destination,
+            relativePath: relative,
+            totalFiles,
+            currentFile: copied + 1,
+          });
+          try {
+            await fs.mkdir(destinationDirectory, { recursive: true });
+            this.log('debug', 'mods', 'Modpack override directory created.', {
+              destinationPath: destinationDirectory,
+              relativePath: relative,
+            });
+            this.sendModpackProgress(options.sender, {
+              projectId: options.projectId,
+              versionId: options.versionId,
+              phase: 'overrides',
+              file: relative,
+              percent:
+                90 +
+                Math.round((copied / Math.max(1, totalFiles)) * 9),
+              message: 'Applying Modpack override',
+            });
+            await this.writeArchiveEntry(zip, entry, destination);
+            copied += 1;
+            if (prefix === 'overrides/') {
+              baseOverrides += 1;
+            } else {
+              clientOverrides += 1;
+            }
+            this.log('info', 'mods', 'Modpack override entry copied.', {
+              sourcePath,
+              destinationPath: destination,
+              relativePath: relative,
+              totalFiles,
+              copiedFiles: copied,
+            });
+            this.sendModpackProgress(options.sender, {
+              projectId: options.projectId,
+              versionId: options.versionId,
+              phase: 'overrides',
+              file: relative,
+              percent:
+                90 +
+                Math.round((copied / Math.max(1, totalFiles)) * 9),
+              message: 'Applying Modpack override',
+            });
+          } catch (error) {
+            this.log('error', 'mods', 'Modpack override entry copy failed.', {
+              sourcePath,
+              destinationPath: destination,
+              relativePath: relative,
+              errorCode:
+                error && typeof error === 'object' && 'code' in error
+                  ? String(error.code)
+                  : 'UNKNOWN',
+              errorMessage:
+                error instanceof Error ? error.message : String(error),
+            });
+            throw error;
+          }
+        }
+      } finally {
+        zip.close();
+      }
     }
     this.log('info', 'mods', 'Modpack overrides application completed.', {
       sourcePath: archivePath,
       destinationPath: instanceDirectory,
       copiedFiles: copied,
-      totalFiles: entries.length,
+      totalFiles,
     });
     return { baseOverrides, clientOverrides };
   }
