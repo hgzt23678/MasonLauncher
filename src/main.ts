@@ -16,7 +16,7 @@ document.querySelectorAll<HTMLElement>('[data-current-year]').forEach((node) => 
   node.textContent = String(new Date().getFullYear());
 });
 
-const revealTargets = document.querySelectorAll<HTMLElement>('.reveal');
+const revealTargets = document.querySelectorAll<HTMLElement>('[data-motion]');
 
 if ('IntersectionObserver' in window) {
   const observer = new IntersectionObserver(

@@ -31,205 +31,190 @@
   <body>
     <a class="skip-link" href="#main-content">本文へ移動</a>
 
-    <md-elevated-card class="top-app-bar">
-      <a class="brand" href="./" aria-label="Mason Launcher ホーム">
+    <md-elevated-card class="app-bar" data-motion style="--motion-order: 0">
+      <a class="brand-link" href="./" aria-label="Mason Launcher ホーム">
         <img src="/favicon.svg" alt="" width="36" height="36" />
         <span>Mason Launcher</span>
       </a>
-      <nav aria-label="メインナビゲーション">
+      <nav class="app-nav" aria-label="メインナビゲーション">
+        <md-text-button href="#principles">設計</md-text-button>
         <md-text-button href="#features">機能</md-text-button>
-        <md-text-button href="#workflow">起動</md-text-button>
-        <md-text-button href="#screenshots">画面</md-text-button>
-        <md-text-button href="#download">入手</md-text-button>
+        <md-text-button href="#launch-flow">起動</md-text-button>
+        <md-text-button href="#screens">画面</md-text-button>
         <md-text-button href="./privacy/">プライバシー</md-text-button>
       </nav>
       <md-outlined-button
         href="https://github.com/hgzt23678/MasonLauncher"
         target="_blank"
         rel="noreferrer"
-        aria-label="GitHubリポジトリを新しいタブで開く"
       >
         GitHub
       </md-outlined-button>
     </md-elevated-card>
 
     <main id="main-content">
-      <section class="hero section-shell">
-        <div class="hero-copy reveal" style="--motion-index: 0">
-          <md-assist-chip label="JAPANESE-FIRST / INSTANCE LAUNCHER"></md-assist-chip>
+      <section class="hero-grid section-shell">
+        <div class="hero-copy" data-motion style="--motion-order: 1">
+          <div class="chip-row">
+            <md-assist-chip label="Material 3 website"></md-assist-chip>
+            <md-assist-chip label="Japanese-first"></md-assist-chip>
+          </div>
           <h1>遊ぶ環境を、きれいに分ける。</h1>
-          <p class="hero-lead">
-            Mason Launcherは、Minecraft: Java Editionの環境をプロファイルごとに整理する非公式ランチャーです。
-            日本語UI、公式メタデータ方式、Javaランタイム管理、Modrinth連携、起動ログ診断をひとつの画面にまとめます。
+          <p class="lead">
+            Mason Launcherは、Minecraft: Java Editionのプロファイル、Java、MOD、ログを整理する非公式インスタンスランチャーです。
+            必要なファイルは公式メタデータから取得し、起動できない原因を追いやすくします。
           </p>
-          <div class="hero-actions">
+          <div class="action-row">
             <md-filled-button
               href="https://github.com/hgzt23678/MasonLauncher/releases/latest"
               target="_blank"
               rel="noreferrer"
             >
-              最新版をダウンロード
+              最新版を入手
             </md-filled-button>
             <md-filled-tonal-button
               href="https://github.com/hgzt23678/MasonLauncher"
               target="_blank"
               rel="noreferrer"
             >
-              ソースを見る
+              リポジトリを見る
             </md-filled-tonal-button>
           </div>
         </div>
 
-        <md-elevated-card class="hero-panel reveal" style="--motion-index: 1">
+        <md-elevated-card class="hero-media" data-motion style="--motion-order: 2">
           <img
             src="/screenshots/profiles.png"
             alt="Mason Launcherのプロファイル一覧画面"
             width="1440"
             height="900"
           />
-          <div class="panel-content">
-            <md-assist-chip label="CURRENT UI"></md-assist-chip>
-            <h2>プロファイルをカードで管理</h2>
-            <p>
-              Vanilla、Forge、Fabric、NeoForgeなどの環境を分けて、起動状態とログを追いやすくします。
-            </p>
+          <div class="media-body">
+            <md-assist-chip label="Profile cards"></md-assist-chip>
+            <h2>インスタンスを混ぜない</h2>
+            <p>mods / config / saves / logsをプロファイルごとに分離し、VanillaとMOD環境の混線を防ぎます。</p>
           </div>
         </md-elevated-card>
       </section>
 
-      <section class="section-shell quick-cards" aria-label="Mason Launcherの要点">
-        <md-filled-card class="quick-card reveal" style="--motion-index: 0">
-          <span>01</span>
-          <strong>Official metadata</strong>
-          <p>Minecraft本体やlibrariesは同梱せず、公式URLから検証して取得します。</p>
-        </md-filled-card>
-        <md-filled-card class="quick-card reveal" style="--motion-index: 1">
-          <span>02</span>
-          <strong>Instance isolation</strong>
-          <p>mods / config / saves / logsをプロファイル単位で分離します。</p>
-        </md-filled-card>
-        <md-filled-card class="quick-card reveal" style="--motion-index: 2">
-          <span>03</span>
-          <strong>Launch diagnostics</strong>
-          <p>Java、classpath、stdout/stderr、latest.logを段階別に記録します。</p>
-        </md-filled-card>
+      <section class="section-shell principle-section" id="principles">
+        <div class="section-title" data-motion>
+          <md-assist-chip label="DESIGN PRINCIPLES"></md-assist-chip>
+          <h2>ランチャーの状態を、Materialの面で整理する。</h2>
+          <p>画面は大きな装飾よりも、情報の階層・状態・行動の区別を優先します。</p>
+        </div>
+        <div class="card-grid three">
+          <md-filled-card class="metric-card" data-motion style="--motion-order: 0">
+            <span>01</span>
+            <strong>公式メタデータ</strong>
+            <p>Minecraft本体やlibrariesは同梱せず、公式URLから取得・検証します。</p>
+          </md-filled-card>
+          <md-filled-card class="metric-card" data-motion style="--motion-order: 1">
+            <span>02</span>
+            <strong>インスタンス分離</strong>
+            <p>プロファイルごとにゲームディレクトリを分け、共有してよいキャッシュだけを共通化します。</p>
+          </md-filled-card>
+          <md-filled-card class="metric-card" data-motion style="--motion-order: 2">
+            <span>03</span>
+            <strong>診断できる起動</strong>
+            <p>Java、mainClass、classpath、stdout/stderr、latest.logを段階ごとに見える化します。</p>
+          </md-filled-card>
+        </div>
       </section>
 
-      <section class="section-shell overview reveal" id="overview">
-        <md-outlined-card class="surface-block">
-          <div class="section-heading">
-            <md-assist-chip label="OVERVIEW"></md-assist-chip>
-            <h2>ランチャーを、環境管理ツールへ。</h2>
-          </div>
-          <div class="overview-grid">
-            <p>
-              Mason Launcherは、Minecraftのバージョン、MOD、設定、セーブデータをプロファイル単位で管理します。
-              共有キャッシュを活用しながら、遊び方ごとの環境を混ぜずに保ちます。
-            </p>
-            <p>
-              Microsoft認証、Minecraft所有権確認、Java選択、起動引数生成、プロセス起動、ログ保存を段階ごとに扱い、
-              起動できないときの原因を追いやすくすることを重視しています。
-            </p>
-          </div>
-        </md-outlined-card>
-      </section>
-
-      <section class="section-shell features" id="features">
-        <div class="section-heading reveal">
+      <section class="section-shell" id="features">
+        <div class="section-title" data-motion>
           <md-assist-chip label="FEATURES"></md-assist-chip>
-          <h2>Material 3の面で、機能を読みやすく。</h2>
-          <p>
-            ボタン、カード、リスト、チップ、プログレスはMaterial Webコンポーネントを使い、色はMaterial 3の役割ベースで整理しています。
-          </p>
+          <h2>主要機能</h2>
+          <p>カードは単一トピックに絞り、行動につながる情報だけを残します。</p>
         </div>
-
-        <div class="feature-grid">
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 0">
-            <md-assist-chip label="INSTANCE"></md-assist-chip>
-            <h3>分離されたインスタンス</h3>
-            <p>MOD、config、saves、logsをプロファイルごとに分け、VanillaとMOD環境の混線を防ぎます。</p>
+        <div class="card-grid three">
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 0">
+            <md-assist-chip label="Profiles"></md-assist-chip>
+            <h3>プロファイル管理</h3>
+            <p>Vanilla、Forge、Fabric、NeoForgeなどの環境をカードで管理します。</p>
           </md-elevated-card>
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 1">
-            <md-assist-chip label="JAVA"></md-assist-chip>
-            <h3>Javaランタイム管理</h3>
-            <p>Minecraft世代に合うJava majorとarchitectureを確認し、必要なランタイムを選択します。</p>
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 1">
+            <md-assist-chip label="Java"></md-assist-chip>
+            <h3>Javaランタイム選択</h3>
+            <p>Minecraftの要求JavaとOS architectureを確認し、起動前に不一致を検出します。</p>
           </md-elevated-card>
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 2">
-            <md-assist-chip label="MODRINTH"></md-assist-chip>
-            <h3>Modrinth連携</h3>
-            <p>現在のMinecraftバージョンとMODローダーに合うMODやModpackを探し、対象インスタンスへ導入します。</p>
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 2">
+            <md-assist-chip label="Modrinth"></md-assist-chip>
+            <h3>MOD / Modpack連携</h3>
+            <p>現在のMinecraft versionとloaderに合うプロジェクトを検索し、対象インスタンスへ導入します。</p>
           </md-elevated-card>
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 0">
-            <md-assist-chip label="LANGUAGE"></md-assist-chip>
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 0">
+            <md-assist-chip label="Auth"></md-assist-chip>
+            <h3>正規認証</h3>
+            <p>Microsoft、Xbox、XSTS、Minecraft Servicesの段階を分けて扱います。</p>
+          </md-elevated-card>
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 1">
+            <md-assist-chip label="Language"></md-assist-chip>
             <h3>日本語に強いUI</h3>
-            <p>日本語を標準に、英語、繁体字、簡体字、韓国語へ対応します。OS言語の自動検出も扱います。</p>
+            <p>日本語を標準に、英語・繁体字・簡体字・韓国語にも対応します。</p>
           </md-elevated-card>
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 1">
-            <md-assist-chip label="SECURITY"></md-assist-chip>
-            <h3>正規認証と検証</h3>
-            <p>Microsoft認証と所有権確認を分離し、ダウンロードしたファイルはhashとsizeで検証します。</p>
-          </md-elevated-card>
-          <md-elevated-card class="feature-card reveal" style="--motion-index: 2">
-            <md-assist-chip label="DIAGNOSTICS"></md-assist-chip>
-            <h3>見える起動プロセス</h3>
-            <p>Java、mainClass、classpath、プロセス状態、stdout/stderr、latest.logを追跡します。</p>
+          <md-elevated-card class="feature-card" data-motion style="--motion-order: 2">
+            <md-assist-chip label="Logs"></md-assist-chip>
+            <h3>起動ログ保存</h3>
+            <p>インスタンスごとのlauncher log、stdout/stderr、latest.logを確認しやすくします。</p>
           </md-elevated-card>
         </div>
       </section>
 
-      <section class="section-shell workflow" id="workflow">
-        <div class="section-heading reveal">
+      <section class="section-shell" id="launch-flow">
+        <div class="section-title" data-motion>
           <md-assist-chip label="LAUNCH FLOW"></md-assist-chip>
-          <h2>起動までの流れを、段階で見せる。</h2>
-          <p>失敗箇所を隠さず、認証・取得・検証・起動をそれぞれ独立した状態として扱います。</p>
+          <h2>起動フロー</h2>
+          <p>失敗時に「どこで止まったか」を曖昧にしないため、状態を段階に分けます。</p>
         </div>
-        <md-filled-card class="workflow-card reveal">
+        <md-filled-card class="flow-card" data-motion>
           <md-linear-progress value="0.78"></md-linear-progress>
           <md-list aria-label="Minecraft起動フロー">
             <md-list-item>
               <div slot="headline">認証と所有権確認</div>
-              <div slot="supporting-text">Microsoft / Xbox / Minecraft Servicesの段階を分離します。</div>
+              <div slot="supporting-text">Microsoft OAuth / Xbox Live / XSTS / Minecraft Servicesを分離します。</div>
             </md-list-item>
             <md-divider></md-divider>
             <md-list-item>
-              <div slot="headline">公式メタデータから取得</div>
-              <div slot="supporting-text">version JSON、client.jar、libraries、assetsを検証しながら取得します。</div>
+              <div slot="headline">公式ファイルを取得</div>
+              <div slot="supporting-text">version JSON、client.jar、libraries、assetsをhashとsizeで検証します。</div>
             </md-list-item>
             <md-divider></md-divider>
             <md-list-item>
               <div slot="headline">Javaと起動引数を解決</div>
-              <div slot="supporting-text">必要Java、natives、classpath、mainClass、JVM/game argsをログ化します。</div>
+              <div slot="supporting-text">required Java、natives、classpath、mainClass、JVM/game argsを組み立てます。</div>
             </md-list-item>
             <md-divider></md-divider>
             <md-list-item>
-              <div slot="headline">Minecraftプロセスを起動</div>
-              <div slot="supporting-text">stdout/stderr、exit code、latest.log、ウィンドウ確認を追跡します。</div>
+              <div slot="headline">プロセスとウィンドウを確認</div>
+              <div slot="supporting-text">spawn、stdout/stderr、exit code、latest.log、画面表示を分けて記録します。</div>
             </md-list-item>
           </md-list>
         </md-filled-card>
       </section>
 
-      <section class="section-shell screenshots" id="screenshots">
-        <div class="section-heading reveal">
+      <section class="section-shell" id="screens">
+        <div class="section-title" data-motion>
           <md-assist-chip label="SCREENS"></md-assist-chip>
-          <h2>実装中の画面。</h2>
-          <p>以下は開発中ブランチのスクリーンショットです。仕様や見た目は変更される場合があります。</p>
+          <h2>画面プレビュー</h2>
+          <p>開発中ブランチのスクリーンショットです。仕様や見た目は変更される場合があります。</p>
         </div>
-        <div class="screenshot-grid">
-          <md-elevated-card class="screenshot-card screenshot-wide reveal" style="--motion-index: 0">
+        <div class="screen-grid">
+          <md-elevated-card class="screen-card wide" data-motion style="--motion-order: 0">
             <img
               src="/screenshots/profiles.png"
-              alt="Mason Launcherのプロファイル一覧"
+              alt="プロファイル一覧画面"
               width="1440"
               height="900"
               loading="lazy"
             />
-            <div class="panel-content">
+            <div class="media-body">
               <h3>プロファイル一覧</h3>
-              <p>インスタンス単位でバージョン、ローダー、MOD数、起動状態を確認できます。</p>
+              <p>バージョン、loader、MOD数、起動状態をまとめて確認できます。</p>
             </div>
           </md-elevated-card>
-          <md-elevated-card class="screenshot-card reveal" style="--motion-index: 1">
+          <md-elevated-card class="screen-card" data-motion style="--motion-order: 1">
             <img
               src="/screenshots/profile-edit.png"
               alt="プロファイル編集画面"
@@ -237,48 +222,34 @@
               height="900"
               loading="lazy"
             />
-            <div class="panel-content">
+            <div class="media-body">
               <h3>プロファイル編集</h3>
-              <p>Minecraftバージョン、MODローダー、メモリ、Java設定を編集します。</p>
+              <p>メモリ、Java、Minecraft version、loaderを設定します。</p>
             </div>
           </md-elevated-card>
-          <md-elevated-card class="screenshot-card reveal" style="--motion-index: 2">
+          <md-elevated-card class="screen-card" data-motion style="--motion-order: 2">
             <img
               src="/screenshots/modrinth-modpacks.png"
-              alt="Modrinth Modpack検索画面"
+              alt="Modrinth検索画面"
               width="1440"
               height="900"
               loading="lazy"
             />
-            <div class="panel-content">
+            <div class="media-body">
               <h3>Modrinth検索</h3>
-              <p>MODやModpackを現在のインスタンスに合わせて探せます。</p>
-            </div>
-          </md-elevated-card>
-          <md-elevated-card class="screenshot-card screenshot-wide reveal" style="--motion-index: 0">
-            <img
-              src="/screenshots/developer-logs.png"
-              alt="開発者ログ画面"
-              width="1220"
-              height="285"
-              loading="lazy"
-            />
-            <div class="panel-content">
-              <h3>起動診断ログ</h3>
-              <p>起動できないときの原因を、段階別ログから確認できます。</p>
+              <p>MODとModpackをインスタンス条件に合わせて探します。</p>
             </div>
           </md-elevated-card>
         </div>
       </section>
 
-      <section class="section-shell notice reveal" id="experimental">
-        <md-outlined-card class="notice-card">
+      <section class="section-shell">
+        <md-outlined-card class="notice-card" data-motion>
           <div>
             <md-assist-chip label="DEVELOPMENT STATUS"></md-assist-chip>
             <h2>開発中のプロジェクトです。</h2>
             <p>
               Fabric / NeoForge、Modrinth Modpackのインポート、認証済みオフライン起動など一部の機能はBetaまたはExperimentalとして扱われます。
-              仕様は変わる場合があります。
             </p>
           </div>
           <div class="chip-row">
@@ -289,15 +260,13 @@
         </md-outlined-card>
       </section>
 
-      <section class="download-section" id="download">
+      <section class="download-zone" id="download">
         <div class="section-shell">
-          <md-filled-card class="download-card reveal">
+          <md-filled-card class="download-card" data-motion>
             <md-assist-chip label="GET MASON LAUNCHER"></md-assist-chip>
             <h2>次の環境を、ここから始める。</h2>
-            <p>
-              GitHub Releasesから最新版を取得できます。配布物がない場合は、READMEの開発手順に従ってソースからビルドしてください。
-            </p>
-            <div class="hero-actions">
+            <p>GitHub Releasesから最新版を取得できます。配布物がない場合は、READMEの手順に従ってソースからビルドしてください。</p>
+            <div class="action-row">
               <md-filled-button
                 href="https://github.com/hgzt23678/MasonLauncher/releases/latest"
                 target="_blank"
@@ -318,7 +287,7 @@
       </section>
     </main>
 
-    <footer>
+    <footer class="site-footer">
       <div class="footer-main section-shell">
         <div class="footer-brand">
           <img src="/favicon.svg" alt="" width="40" height="40" />
