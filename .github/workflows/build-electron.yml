@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - master
+      - develop
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -29,18 +31,24 @@ jobs:
           - runner: windows-11-arm
             arch: arm64
             artifact: mason-launcher-windows-arm64
+          - runner: macos-15-intel
+            arch: x64
+            artifact: mason-launcher-macos-x64-unsigned
+          - runner: macos-15
+            arch: arm64
+            artifact: mason-launcher-macos-arm64-unsigned
 
     env:
       MASON_BUILD_CONFIGURATION: release
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install Linux packaging tools
@@ -58,8 +66,28 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Verify distributables
+        shell: node {0}
+        run: |
+          const { readdirSync, statSync } = require('node:fs');
+          const { join } = require('node:path');
+          const root = join(process.cwd(), 'out', 'release', 'make');
+          const files = [];
+          const visit = (directory) => {
+            for (const entry of readdirSync(directory)) {
+              const target = join(directory, entry);
+              if (statSync(target).isDirectory()) visit(target);
+              else files.push(target);
+            }
+          };
+          visit(root);
+          if (files.length === 0) {
+            throw new Error(`No distributables were generated under ${root}`);
+          }
+          console.log(files.join('\n'));
+
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact }}
           path: out/release/make/**/*

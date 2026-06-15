@@ -87,6 +87,10 @@ build-release.bat
 - `build-release.bat`: Releaseビルドを`out/release/`へ作成
 - `build-linux.sh debug|release`: Linuxで構成別に`out/debug/`または`out/release/`へ作成
 
+GitHub Actionsの`Build Electron` workflowはNode.js 24を使用し、Windows、
+Linux、macOSのx64/arm64向け成果物を生成します。macOSのZIP成果物は署名と
+notarizationを行っていないため、配布前にApple Developer証明書を使った署名が必要です。
+
 `.env`にクライアントIDがない開発ビルドは起動できますが、Microsoftログインは無効になります。
 
 Mason LauncherはMojangまたはMicrosoftの公式製品ではありません。
