@@ -1,4 +1,5 @@
 import '@material/web/button/filled-button.js';
+import '@material/web/button/filled-tonal-button.js';
 import '@material/web/button/outlined-button.js';
 import '@material/web/button/text-button.js';
 import '@material/web/chips/assist-chip.js';
@@ -8,6 +9,7 @@ import '@material/web/labs/card/filled-card.js';
 import '@material/web/labs/card/outlined-card.js';
 import '@material/web/list/list.js';
 import '@material/web/list/list-item.js';
+import '@material/web/progress/linear-progress.js';
 import './styles.css';
 
 document.querySelectorAll<HTMLElement>('[data-current-year]').forEach((node) => {
