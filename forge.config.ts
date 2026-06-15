@@ -16,6 +16,7 @@ const config: ForgeConfig = {
   outDir: `out/${buildConfiguration}`,
   packagerConfig: {
     asar: true,
+    executableName: 'mason-launcher',
   },
   rebuildConfig: {},
   makers: [
