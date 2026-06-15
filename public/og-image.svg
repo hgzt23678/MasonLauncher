@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" role="img" aria-labelledby="title description">
+  <title id="title">Mason Launcher</title>
+  <desc id="description">日本語に強いMinecraftインスタンスランチャー</desc>
+  <defs>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientTransform="translate(936 108) rotate(129) scale(530 490)" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#24683c" stop-opacity=".7"/>
+      <stop offset="1" stop-color="#07110c" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cube" x1="92" y1="79" x2="287" y2="306" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a4d2b"/>
+      <stop offset="1" stop-color="#07110c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="#07110c"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+  <path d="M0 480h1200v150H0z" fill="#0b1810"/>
+  <g transform="translate(86 112)">
+    <rect width="220" height="220" rx="52" fill="url(#cube)"/>
+    <path d="m54 70 56-30 56 30v88l-56 30-56-30V70Z" fill="none" stroke="#77dc99" stroke-width="14" stroke-linejoin="round"/>
+    <path d="m54 70 56 32 56-32m-56 32v86" fill="none" stroke="#77dc99" stroke-width="14" stroke-linejoin="round"/>
+  </g>
+  <text x="366" y="224" fill="#77dc99" font-family="Arial, sans-serif" font-size="26" font-weight="700" letter-spacing="7">INSTANCE-BASED LAUNCHER</text>
+  <text x="360" y="326" fill="#f1f7f2" font-family="Arial, sans-serif" font-size="80" font-weight="700" letter-spacing="-4">Mason Launcher</text>
+  <text x="365" y="390" fill="#bfc9c0" font-family="Arial, sans-serif" font-size="30">日本語に強いMinecraftインスタンスランチャー</text>
+  <text x="88" y="554" fill="#7f8c82" font-family="Arial, sans-serif" font-size="23">Unofficial · Open Source · MIT License</text>
+</svg>

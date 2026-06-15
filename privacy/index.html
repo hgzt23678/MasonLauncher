@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>プライバシーに関する声明 | Mason Launcher</title>
+    <meta
+      name="description"
+      content="Mason Launcherにおける認証情報、設定、ログ、外部サービス通信の取り扱いについて説明します。"
+    />
+    <meta name="theme-color" content="#07110c" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="article" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:title" content="Mason Launcher プライバシーに関する声明" />
+    <meta
+      property="og:description"
+      content="Mason Launcherが取り扱う情報と外部サービス通信について。"
+    />
+    <meta
+      property="og:url"
+      content="https://hgzt23678.github.io/MasonLauncher/privacy/"
+    />
+    <link
+      rel="canonical"
+      href="https://hgzt23678.github.io/MasonLauncher/privacy/"
+    />
+    <link rel="icon" href="%BASE_URL%favicon.svg" type="image/svg+xml" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#privacy-content">本文へ移動</a>
+    <header class="site-header compact-header">
+      <a class="brand" href="../" aria-label="Mason Launcher ホーム">
+        <img src="%BASE_URL%favicon.svg" alt="" width="36" height="36" />
+        <span>Mason Launcher</span>
+      </a>
+      <md-outlined-button href="../">ホームへ戻る</md-outlined-button>
+    </header>
+
+    <main id="privacy-content" class="legal-page">
+      <section class="legal-hero section-shell">
+        <div class="section-label">PRIVACY</div>
+        <h1>プライバシーに<br />関する声明</h1>
+        <p>
+          Mason Launcherが取り扱う情報、保存場所、外部サービスとの通信について説明します。
+        </p>
+        <div class="legal-date">最終更新日: 2026年6月14日</div>
+      </section>
+
+      <div class="legal-layout section-shell">
+        <aside class="legal-nav">
+          <strong>内容</strong>
+          <a href="#information">取り扱う情報</a>
+          <a href="#purpose">利用目的</a>
+          <a href="#storage">保存方法</a>
+          <a href="#services">外部サービス</a>
+          <a href="#deletion">情報の削除</a>
+          <a href="#contact">お問い合わせ</a>
+        </aside>
+
+        <article class="legal-content">
+          <md-elevated-card>
+            <p class="legal-lead">
+              Mason Launcher（以下「本アプリ」）はMinecraft: Java Edition向けの
+              非公式ランチャーです。本アプリはMicrosoft、Mojang Studios、
+              Modrinthの公式製品ではありません。
+            </p>
+          </md-elevated-card>
+
+          <section id="information">
+            <span class="legal-number">01</span>
+            <h2>取り扱う情報</h2>
+            <p>本アプリは、機能提供に必要な範囲で次の情報を取り扱います。</p>
+            <ul>
+              <li>Microsoftアカウント認証トークン</li>
+              <li>Minecraftプロフィールのユーザー名、UUID、スキン情報</li>
+              <li>Minecraft: Java Editionの所有権確認結果</li>
+              <li>ランチャー設定、インスタンス設定、導入済みMODの情報</li>
+              <li>Minecraftおよびランチャーの診断ログ</li>
+            </ul>
+          </section>
+
+          <section id="purpose">
+            <span class="legal-number">02</span>
+            <h2>利用目的</h2>
+            <p>
+              これらの情報は、Microsoftアカウントでのログイン、Minecraftの所有権確認、
+              ゲームの起動、ゲームファイルとMODの取得、設定保存、
+              および不具合診断のために使用します。
+            </p>
+          </section>
+
+          <section id="storage">
+            <span class="legal-number">03</span>
+            <h2>保存方法</h2>
+            <p>
+              認証キャッシュは、利用可能な環境ではOSが提供する暗号化機能を利用して
+              端末内に保存します。プロフィール、設定、インスタンス、ログも原則として
+              利用者の端末内に保存されます。
+            </p>
+            <p>
+              access token、refresh token、Authorizationヘッダーなどの秘密情報は、
+              ランチャーの診断ログでマスクするよう設計されています。
+            </p>
+            <md-outlined-card class="legal-note">
+              <strong>独自の収集サーバーについて</strong>
+              <p>
+                現在、本アプリ独自のサーバーへ利用者情報や利用状況を送信する
+                テレメトリ機能は実装していません。
+              </p>
+            </md-outlined-card>
+          </section>
+
+          <section id="services">
+            <span class="legal-number">04</span>
+            <h2>外部サービスへの通信</h2>
+            <p>本アプリは機能提供のため、主に次の外部サービスと通信します。</p>
+            <ul>
+              <li>Microsoft Entra ID、Xbox Live、XSTS、Minecraft Services</li>
+              <li>Mojang / Minecraftの公式メタデータ・配信サービス</li>
+              <li>Modrinth APIおよびModrinth配信サービス</li>
+              <li>Javaランタイムの公式配信サービス</li>
+            </ul>
+            <p>
+              各サービスでの情報の取り扱いには、それぞれの利用規約と
+              プライバシーポリシーが適用されます。
+            </p>
+            <div class="external-policy-links">
+              <md-outlined-button
+                href="https://privacy.microsoft.com/privacystatement"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Microsoft Privacy
+              </md-outlined-button>
+              <md-outlined-button
+                href="https://www.minecraft.net/en-us/eula"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Minecraft EULA
+              </md-outlined-button>
+              <md-outlined-button
+                href="https://modrinth.com/legal/privacy"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Modrinth Privacy
+              </md-outlined-button>
+            </div>
+          </section>
+
+          <section id="deletion">
+            <span class="legal-number">05</span>
+            <h2>情報の削除</h2>
+            <p>
+              本アプリからログアウトすると、保存済みのMicrosoft認証キャッシュ、
+              Minecraftプロフィール、および認証済みオフライン起動権限が削除されます。
+              設定、インスタンス、ゲームデータは、利用者が端末上のファイルを削除することで
+              消去できます。
+            </p>
+          </section>
+
+          <section>
+            <span class="legal-number">06</span>
+            <h2>第三者への提供</h2>
+            <p>
+              開発者が利用者の個人情報を販売することはありません。
+              認証やダウンロードなどの機能実行時には、
+              必要な情報が前述の外部サービスへ直接送信されます。
+            </p>
+          </section>
+
+          <section>
+            <span class="legal-number">07</span>
+            <h2>声明の変更</h2>
+            <p>
+              本声明は、本アプリの機能変更などに応じて更新される場合があります。
+              更新時は、このページの最終更新日を変更します。
+            </p>
+          </section>
+
+          <section id="contact">
+            <span class="legal-number">08</span>
+            <h2>お問い合わせ</h2>
+            <p>
+              本声明または本アプリについての問い合わせは、
+              Mason LauncherのGitHub Issuesからお願いします。
+            </p>
+            <md-filled-button
+              href="https://github.com/hgzt23678/MasonLauncher/issues"
+              target="_blank"
+              rel="noreferrer"
+            >
+              GitHub Issuesを開く
+            </md-filled-button>
+          </section>
+        </article>
+      </div>
+    </main>
+
+    <footer>
+      <div class="footer-legal section-shell">
+        <span>© <span data-current-year></span> Mason Launcher contributors.</span>
+        <p>
+          MinecraftはMojang StudiosおよびMicrosoftの商標です。
+          本プロジェクトは両社の公式製品ではありません。
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

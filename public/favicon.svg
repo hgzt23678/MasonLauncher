@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title">
+  <title id="title">Mason Launcher</title>
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1a4d2b"/>
+      <stop offset="1" stop-color="#07110c"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="url(#bg)"/>
+  <path d="M16 19.5 32 11l16 8.5v25L32 53l-16-8.5v-25Z" fill="none" stroke="#77dc99" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m16 19.5 16 9 16-9M32 28.5V53" fill="none" stroke="#77dc99" stroke-width="4" stroke-linejoin="round"/>
+  <path d="m23 23.5 9-4.7 9 4.7-9 5-9-5Z" fill="#77dc99"/>
+</svg>

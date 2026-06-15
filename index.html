@@ -1,0 +1,383 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mason Launcher | 日本語に強いMinecraftインスタンスランチャー</title>
+    <meta
+      name="description"
+      content="Mason Launcherは、日本語を中心に設計されたMinecraft: Java Edition向けの非公式インスタンスランチャーです。プロファイル分離、Java管理、Modrinth連携、起動診断に対応します。"
+    />
+    <meta name="theme-color" content="#07110c" />
+    <meta name="color-scheme" content="dark" />
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ja_JP" />
+    <meta property="og:site_name" content="Mason Launcher" />
+    <meta property="og:title" content="Mason Launcher" />
+    <meta
+      property="og:description"
+      content="日本語に強い、Minecraft: Java Edition向けの非公式インスタンスランチャー。"
+    />
+    <meta property="og:url" content="https://hgzt23678.github.io/MasonLauncher/" />
+    <meta
+      property="og:image"
+      content="https://hgzt23678.github.io/MasonLauncher/og-image.svg"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="canonical" href="https://hgzt23678.github.io/MasonLauncher/" />
+    <link rel="icon" href="%BASE_URL%favicon.svg" type="image/svg+xml" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">本文へ移動</a>
+
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="Mason Launcher ホーム">
+        <img src="%BASE_URL%favicon.svg" alt="" width="36" height="36" />
+        <span>Mason Launcher</span>
+      </a>
+      <nav aria-label="メインナビゲーション">
+        <a href="#features">機能</a>
+        <a href="#preview">画面</a>
+        <a href="#download">ダウンロード</a>
+        <a href="./privacy/">プライバシー</a>
+      </nav>
+      <md-outlined-button
+        href="https://github.com/hgzt23678/MasonLauncher"
+        target="_blank"
+        rel="noreferrer"
+        aria-label="GitHubリポジトリを新しいタブで開く"
+      >
+        GitHub
+      </md-outlined-button>
+    </header>
+
+    <main id="main-content">
+      <section class="hero section-shell">
+        <div class="hero-copy reveal">
+          <div class="eyebrow">INSTANCE-BASED · JAPANESE-FIRST</div>
+          <h1>遊ぶ環境を、<br /><span>きれいに分ける。</span></h1>
+          <p class="hero-lead">
+            Mason Launcherは、Minecraft: Java Editionの環境をプロファイルごとに整理する、
+            日本語に強い非公式ランチャーです。
+          </p>
+          <div class="hero-actions">
+            <md-filled-button
+              href="https://github.com/hgzt23678/MasonLauncher/releases/latest"
+              target="_blank"
+              rel="noreferrer"
+            >
+              最新版をダウンロード
+            </md-filled-button>
+            <md-outlined-button
+              href="https://github.com/hgzt23678/MasonLauncher"
+              target="_blank"
+              rel="noreferrer"
+            >
+              ソースを見る
+            </md-outlined-button>
+          </div>
+          <div class="hero-meta" aria-label="プロジェクト情報">
+            <md-assist-chip label="Windows / Linux"></md-assist-chip>
+            <md-assist-chip label="MIT License"></md-assist-chip>
+            <md-assist-chip label="Electron + TypeScript"></md-assist-chip>
+          </div>
+          <p class="download-note">
+            Minecraft: Java Editionを所有するMicrosoftアカウントが必要です。
+          </p>
+        </div>
+
+        <div class="hero-visual reveal" aria-label="Mason Launcher画面イメージ">
+          <div class="glow glow-one"></div>
+          <div class="glow glow-two"></div>
+          <md-elevated-card class="app-window">
+            <div class="window-bar">
+              <div class="window-brand">
+                <img src="%BASE_URL%favicon.svg" alt="" width="24" height="24" />
+                <span>Mason Launcher</span>
+              </div>
+              <div class="window-actions" aria-hidden="true">
+                <span></span><span></span><span></span>
+              </div>
+            </div>
+            <div class="window-body">
+              <aside class="mock-rail" aria-hidden="true">
+                <div class="rail-logo"></div>
+                <div class="rail-item active"></div>
+                <div class="rail-item"></div>
+                <div class="rail-item"></div>
+                <div class="rail-spacer"></div>
+                <div class="rail-item"></div>
+              </aside>
+              <div class="mock-content">
+                <div class="mock-heading">
+                  <div>
+                    <span>YOUR INSTANCES</span>
+                    <strong>プロファイル</strong>
+                  </div>
+                  <div class="mock-add">＋</div>
+                </div>
+                <div class="profile-grid">
+                  <article class="mock-profile selected">
+                    <div class="profile-art terrain-one"></div>
+                    <div class="profile-info">
+                      <strong>Survival</strong>
+                      <span>Fabric · 1.21.1</span>
+                    </div>
+                    <div class="profile-status">PLAY</div>
+                  </article>
+                  <article class="mock-profile">
+                    <div class="profile-art terrain-two"></div>
+                    <div class="profile-info">
+                      <strong>Creative Lab</strong>
+                      <span>Vanilla · 1.20.4</span>
+                    </div>
+                    <div class="profile-status muted">READY</div>
+                  </article>
+                  <article class="mock-profile">
+                    <div class="profile-art terrain-three"></div>
+                    <div class="profile-info">
+                      <strong>Classic Forge</strong>
+                      <span>Forge · 1.16.5</span>
+                    </div>
+                    <div class="profile-status muted">12 MODS</div>
+                  </article>
+                  <article class="mock-profile placeholder-profile">
+                    <span>新しい環境を作成</span>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </md-elevated-card>
+          <p class="preview-caption">UI preview · 実際の画面は開発状況により変わります</p>
+        </div>
+      </section>
+
+      <section class="trust-strip" aria-label="主な特徴">
+        <div><strong>01</strong><span>インスタンス分離</span></div>
+        <div><strong>02</strong><span>公式メタデータ方式</span></div>
+        <div><strong>03</strong><span>起動診断ログ</span></div>
+        <div><strong>04</strong><span>日本語ファースト</span></div>
+      </section>
+
+      <section class="section-shell intro reveal" id="overview">
+        <div class="section-label">ABOUT</div>
+        <div class="intro-grid">
+          <h2>ランチャーを、<br />環境管理ツールへ。</h2>
+          <div>
+            <p>
+              Minecraftのバージョン、MOD、設定、セーブデータをプロファイル単位で管理。
+              共有キャッシュを活用しながら、遊び方ごとの環境を混ぜずに保ちます。
+            </p>
+            <p>
+              公式Mojangメタデータを使ったゲームファイル取得と検証、
+              Microsoft認証、Javaランタイム選択、詳細な起動ログを一つの画面にまとめます。
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section class="section-shell features" id="features">
+        <div class="section-heading reveal">
+          <div>
+            <div class="section-label">FEATURES</div>
+            <h2>必要なものを、迷わない場所に。</h2>
+          </div>
+          <p>日常的な起動から、問題発生時の切り分けまでを支えます。</p>
+        </div>
+
+        <div class="feature-grid">
+          <md-elevated-card class="feature-card feature-primary reveal">
+            <div class="feature-number">01</div>
+            <div class="feature-symbol instance-symbol" aria-hidden="true">
+              <span></span><span></span><span></span><span></span>
+            </div>
+            <h3>分離されたインスタンス</h3>
+            <p>
+              MOD、config、saves、logsをプロファイルごとに分離。
+              VanillaとMOD環境を同じフォルダで混在させません。
+            </p>
+          </md-elevated-card>
+
+          <md-elevated-card class="feature-card reveal">
+            <div class="feature-number">02</div>
+            <div class="feature-symbol java-symbol" aria-hidden="true">J</div>
+            <h3>Javaを自動で選択</h3>
+            <p>
+              Minecraftの世代に応じたJava majorとarchitectureを検証。
+              管理ランタイムとカスタムJavaを選択できます。
+            </p>
+          </md-elevated-card>
+
+          <md-elevated-card class="feature-card reveal">
+            <div class="feature-number">03</div>
+            <div class="feature-symbol mod-symbol" aria-hidden="true"></div>
+            <h3>Modrinth連携</h3>
+            <p>
+              現在のMinecraftバージョンとMODローダーに合うMODを検索し、
+              対象インスタンスへ安全に保存します。
+            </p>
+          </md-elevated-card>
+
+          <md-elevated-card class="feature-card reveal">
+            <div class="feature-number">04</div>
+            <div class="feature-symbol log-symbol" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+            <h3>見える起動プロセス</h3>
+            <p>
+              Java、mainClass、プロセス、stdout/stderr、終了状態を記録。
+              「起動しない」の原因を追いやすくします。
+            </p>
+          </md-elevated-card>
+
+          <md-elevated-card class="feature-card reveal">
+            <div class="feature-number">05</div>
+            <div class="feature-symbol language-symbol" aria-hidden="true">あ</div>
+            <h3>日本語に強いUI</h3>
+            <p>
+              日本語を標準に、英語・繁体字・簡体字・韓国語にも対応。
+              システム言語を自動検出します。
+            </p>
+          </md-elevated-card>
+
+          <md-elevated-card class="feature-card reveal">
+            <div class="feature-number">06</div>
+            <div class="feature-symbol shield-symbol" aria-hidden="true"></div>
+            <h3>正規認証とファイル検証</h3>
+            <p>
+              Microsoft認証と所有権確認を分離して扱い、
+              ダウンロードしたファイルをhashとsizeで検証します。
+            </p>
+          </md-elevated-card>
+        </div>
+      </section>
+
+      <section class="section-shell preview-section" id="preview">
+        <div class="section-heading reveal">
+          <div>
+            <div class="section-label">SCREENSHOTS</div>
+            <h2>プロファイル中心のワークスペース。</h2>
+          </div>
+          <p>ここは正式な製品スクリーンショットへ差し替え可能な枠です。</p>
+        </div>
+        <div class="screenshot-grid">
+          <md-elevated-card class="screenshot-card screenshot-wide reveal">
+            <div class="screenshot-placeholder">
+              <div class="placeholder-grid"></div>
+              <div class="placeholder-label">
+                <span>PROFILE GRID</span>
+                <strong>インスタンス一覧</strong>
+              </div>
+            </div>
+          </md-elevated-card>
+          <md-elevated-card class="screenshot-card reveal">
+            <div class="screenshot-placeholder modrinth-placeholder">
+              <div class="placeholder-search"></div>
+              <div class="placeholder-results">
+                <span></span><span></span><span></span>
+              </div>
+              <div class="placeholder-label">
+                <span>MODRINTH</span>
+                <strong>MOD / Modpack検索</strong>
+              </div>
+            </div>
+          </md-elevated-card>
+          <md-elevated-card class="screenshot-card reveal">
+            <div class="screenshot-placeholder log-placeholder">
+              <div class="terminal-lines">
+                <span></span><span></span><span></span><span></span>
+              </div>
+              <div class="placeholder-label">
+                <span>DIAGNOSTICS</span>
+                <strong>開発者ログ</strong>
+              </div>
+            </div>
+          </md-elevated-card>
+        </div>
+      </section>
+
+      <section class="section-shell experimental reveal" id="experimental">
+        <md-outlined-card>
+          <div class="experimental-content">
+            <div>
+              <div class="section-label">DEVELOPMENT STATUS</div>
+              <h2>開発中のプロジェクトです。</h2>
+            </div>
+            <div>
+              <p>
+                Mason Launcherは継続的に開発されています。Fabric / NeoForge、
+                Modrinth Modpackのインポート、認証済みオフライン起動など一部の機能は
+                BetaまたはExperimentalとして扱われ、仕様が変わる場合があります。
+              </p>
+              <div class="status-chips">
+                <md-assist-chip label="Fabric · Beta"></md-assist-chip>
+                <md-assist-chip label="NeoForge · Beta"></md-assist-chip>
+                <md-assist-chip label=".mrpack · Experimental"></md-assist-chip>
+              </div>
+            </div>
+          </div>
+        </md-outlined-card>
+      </section>
+
+      <section class="download-section" id="download">
+        <div class="section-shell download-grid reveal">
+          <div>
+            <div class="section-label">GET MASON LAUNCHER</div>
+            <h2>次の環境を、<br />ここから始める。</h2>
+          </div>
+          <div class="download-panel">
+            <p>
+              GitHub Releasesから最新ビルドを取得できます。
+              現在の対応状況や既知の問題はリポジトリで確認してください。
+            </p>
+            <div class="hero-actions">
+              <md-filled-button
+                href="https://github.com/hgzt23678/MasonLauncher/releases/latest"
+                target="_blank"
+                rel="noreferrer"
+              >
+                GitHub Releases
+              </md-filled-button>
+              <md-outlined-button
+                href="https://github.com/hgzt23678/MasonLauncher/issues"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Issuesを見る
+              </md-outlined-button>
+            </div>
+            <small>
+              配布物がない場合は、READMEの開発手順に従ってソースからビルドしてください。
+            </small>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="footer-main section-shell">
+        <div class="footer-brand">
+          <img src="%BASE_URL%favicon.svg" alt="" width="40" height="40" />
+          <div>
+            <strong>Mason Launcher</strong>
+            <span>A clean instance launcher for Minecraft.</span>
+          </div>
+        </div>
+        <div class="footer-links">
+          <a href="https://github.com/hgzt23678/MasonLauncher">GitHub</a>
+          <a href="https://github.com/hgzt23678/MasonLauncher/releases">Releases</a>
+          <span>MIT License</span>
+          <a href="./privacy/">プライバシー</a>
+        </div>
+      </div>
+      <div class="footer-legal section-shell">
+        <span>© <span data-current-year></span> Mason Launcher contributors.</span>
+        <p>
+          MinecraftはMojang StudiosおよびMicrosoftの商標です。
+          Mason LauncherはMojang StudiosまたはMicrosoftが提供・承認する製品ではありません。
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>
